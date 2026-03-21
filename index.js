@@ -1,7 +1,6 @@
-// bot.js
+
 import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from "baileys";
 import { Boom } from "@hapi/boom";
-import qrcode from "qrcode-terminal";
 import pino from "pino";
 import chalk from "chalk";
 import figlet from "figlet";
@@ -13,7 +12,8 @@ import { getGroupConfig } from './moduls/config.js';
 const logStream = fs.createWriteStream("bot.log", { flags: "a" })
 import antiStatusMention from './lib/AntiStatus.js'
 const origLog = console.log
-
+import express from "express";       // Untuk server web
+import qrcode from "qrcode";         // Untuk generate QR menjadi image
 console.log = function (...args) {
 
     const text = args.join(" ")
@@ -60,106 +60,106 @@ const getGroupMetadataSafe = async (sock, jid) => {
 
 // ------Hadith Sample------
 const hadithList = [
-"Sebaik-baik manusia adalah yang paling bermanfaat bagi manusia lainnya. (HR. Ahmad)",
-"Sesungguhnya amal itu tergantung niatnya. (HR. Bukhari & Muslim)",
-"Senyummu kepada saudaramu adalah sedekah. (HR. Tirmidzi)",
-"Tidak sempurna iman seseorang hingga ia mencintai saudaranya seperti mencintai dirinya sendiri. (HR. Bukhari & Muslim)",
-"Sebaik-baik kalian adalah yang paling baik akhlaknya. (HR. Bukhari)",
-"Sedekah tidak akan mengurangi harta. (HR. Muslim)",
-"Barangsiapa menempuh jalan untuk mencari ilmu, Allah akan mudahkan baginya jalan menuju surga. (HR. Muslim)",
-"Orang yang penyayang akan disayangi oleh Yang Maha Penyayang. (HR. Tirmidzi)",
-"Permudahlah dan jangan mempersulit. (HR. Bukhari & Muslim)",
-"Barangsiapa beriman kepada Allah dan hari akhir hendaklah berkata baik atau diam. (HR. Bukhari & Muslim)",
-"Allah tidak melihat rupa kalian tetapi melihat hati kalian. (HR. Muslim)",
-"Tangan di atas lebih baik daripada tangan di bawah. (HR. Bukhari & Muslim)",
-"Doa adalah ibadah. (HR. Tirmidzi)",
-"Sebaik-baik kalian adalah yang belajar Al-Qur'an dan mengajarkannya. (HR. Bukhari)",
-"Orang kuat adalah yang mampu menahan amarahnya. (HR. Bukhari & Muslim)",
-"Barangsiapa memudahkan urusan orang lain, Allah akan memudahkan urusannya. (HR. Muslim)",
-"Jagalah Allah, niscaya Allah menjagamu. (HR. Tirmidzi)",
-"Dunia adalah penjara bagi orang mukmin dan surga bagi orang kafir. (HR. Muslim)",
-"Barangsiapa yang tidak bersyukur kepada manusia maka ia tidak bersyukur kepada Allah. (HR. Tirmidzi)",
-"Sesungguhnya Allah itu baik dan menyukai kebaikan. (HR. Muslim)",
+    "Sebaik-baik manusia adalah yang paling bermanfaat bagi manusia lainnya. (HR. Ahmad)",
+    "Sesungguhnya amal itu tergantung niatnya. (HR. Bukhari & Muslim)",
+    "Senyummu kepada saudaramu adalah sedekah. (HR. Tirmidzi)",
+    "Tidak sempurna iman seseorang hingga ia mencintai saudaranya seperti mencintai dirinya sendiri. (HR. Bukhari & Muslim)",
+    "Sebaik-baik kalian adalah yang paling baik akhlaknya. (HR. Bukhari)",
+    "Sedekah tidak akan mengurangi harta. (HR. Muslim)",
+    "Barangsiapa menempuh jalan untuk mencari ilmu, Allah akan mudahkan baginya jalan menuju surga. (HR. Muslim)",
+    "Orang yang penyayang akan disayangi oleh Yang Maha Penyayang. (HR. Tirmidzi)",
+    "Permudahlah dan jangan mempersulit. (HR. Bukhari & Muslim)",
+    "Barangsiapa beriman kepada Allah dan hari akhir hendaklah berkata baik atau diam. (HR. Bukhari & Muslim)",
+    "Allah tidak melihat rupa kalian tetapi melihat hati kalian. (HR. Muslim)",
+    "Tangan di atas lebih baik daripada tangan di bawah. (HR. Bukhari & Muslim)",
+    "Doa adalah ibadah. (HR. Tirmidzi)",
+    "Sebaik-baik kalian adalah yang belajar Al-Qur'an dan mengajarkannya. (HR. Bukhari)",
+    "Orang kuat adalah yang mampu menahan amarahnya. (HR. Bukhari & Muslim)",
+    "Barangsiapa memudahkan urusan orang lain, Allah akan memudahkan urusannya. (HR. Muslim)",
+    "Jagalah Allah, niscaya Allah menjagamu. (HR. Tirmidzi)",
+    "Dunia adalah penjara bagi orang mukmin dan surga bagi orang kafir. (HR. Muslim)",
+    "Barangsiapa yang tidak bersyukur kepada manusia maka ia tidak bersyukur kepada Allah. (HR. Tirmidzi)",
+    "Sesungguhnya Allah itu baik dan menyukai kebaikan. (HR. Muslim)",
 
-"Sesungguhnya orang mukmin itu bersaudara. (HR. Bukhari & Muslim)",
-"Sebaik-baik sedekah adalah memberi makan. (HR. Ahmad)",
-"Berikanlah kabar gembira dan jangan membuat orang lari. (HR. Bukhari & Muslim)",
-"Allah mencintai kelembutan dalam segala perkara. (HR. Bukhari & Muslim)",
-"Barangsiapa menutup aib seorang muslim, Allah akan menutup aibnya. (HR. Muslim)",
-"Sesungguhnya kejujuran membawa kepada kebaikan. (HR. Bukhari & Muslim)",
-"Kebohongan membawa kepada keburukan. (HR. Bukhari & Muslim)",
-"Seorang muslim adalah saudara bagi muslim lainnya. (HR. Bukhari & Muslim)",
-"Shalatlah kalian sebagaimana kalian melihat aku shalat. (HR. Bukhari)",
-"Sesungguhnya Allah Maha Lembut dan mencintai kelembutan. (HR. Muslim)",
+    "Sesungguhnya orang mukmin itu bersaudara. (HR. Bukhari & Muslim)",
+    "Sebaik-baik sedekah adalah memberi makan. (HR. Ahmad)",
+    "Berikanlah kabar gembira dan jangan membuat orang lari. (HR. Bukhari & Muslim)",
+    "Allah mencintai kelembutan dalam segala perkara. (HR. Bukhari & Muslim)",
+    "Barangsiapa menutup aib seorang muslim, Allah akan menutup aibnya. (HR. Muslim)",
+    "Sesungguhnya kejujuran membawa kepada kebaikan. (HR. Bukhari & Muslim)",
+    "Kebohongan membawa kepada keburukan. (HR. Bukhari & Muslim)",
+    "Seorang muslim adalah saudara bagi muslim lainnya. (HR. Bukhari & Muslim)",
+    "Shalatlah kalian sebagaimana kalian melihat aku shalat. (HR. Bukhari)",
+    "Sesungguhnya Allah Maha Lembut dan mencintai kelembutan. (HR. Muslim)",
 
-"Orang mukmin yang kuat lebih dicintai Allah daripada mukmin yang lemah. (HR. Muslim)",
-"Sebaik-baik manusia adalah yang paling baik kepada keluarganya. (HR. Tirmidzi)",
-"Saling memberi hadiah akan menumbuhkan cinta. (HR. Bukhari)",
-"Barangsiapa beriman kepada Allah dan hari akhir maka hendaklah memuliakan tamunya. (HR. Bukhari & Muslim)",
-"Barangsiapa beriman kepada Allah dan hari akhir maka hendaklah memuliakan tetangganya. (HR. Bukhari & Muslim)",
-"Sesungguhnya Allah mencintai orang yang sabar. (HR. Muslim)",
-"Barangsiapa bersabar maka Allah akan memberinya kesabaran. (HR. Bukhari)",
-"Janganlah marah. (HR. Bukhari)",
-"Senyuman kepada saudaramu adalah sedekah. (HR. Tirmidzi)",
-"Sesungguhnya Allah mencintai orang yang berbuat baik. (HR. Bukhari)",
+    "Orang mukmin yang kuat lebih dicintai Allah daripada mukmin yang lemah. (HR. Muslim)",
+    "Sebaik-baik manusia adalah yang paling baik kepada keluarganya. (HR. Tirmidzi)",
+    "Saling memberi hadiah akan menumbuhkan cinta. (HR. Bukhari)",
+    "Barangsiapa beriman kepada Allah dan hari akhir maka hendaklah memuliakan tamunya. (HR. Bukhari & Muslim)",
+    "Barangsiapa beriman kepada Allah dan hari akhir maka hendaklah memuliakan tetangganya. (HR. Bukhari & Muslim)",
+    "Sesungguhnya Allah mencintai orang yang sabar. (HR. Muslim)",
+    "Barangsiapa bersabar maka Allah akan memberinya kesabaran. (HR. Bukhari)",
+    "Janganlah marah. (HR. Bukhari)",
+    "Senyuman kepada saudaramu adalah sedekah. (HR. Tirmidzi)",
+    "Sesungguhnya Allah mencintai orang yang berbuat baik. (HR. Bukhari)",
 
-"Orang yang paling dekat denganku di hari kiamat adalah yang paling baik akhlaknya. (HR. Tirmidzi)",
-"Sesungguhnya agama itu mudah. (HR. Bukhari)",
-"Barangsiapa membantu saudaranya maka Allah akan membantunya. (HR. Muslim)",
-"Sesungguhnya Allah menyukai jika seseorang melakukan pekerjaan dengan baik. (HR. Baihaqi)",
-"Barangsiapa menempuh jalan mencari ilmu maka Allah mudahkan jalannya menuju surga. (HR. Muslim)",
-"Sesungguhnya doa adalah senjata orang mukmin. (HR. Hakim)",
-"Barangsiapa membaca satu huruf dari Al-Qur'an maka baginya satu kebaikan. (HR. Tirmidzi)",
-"Shalat berjamaah lebih utama daripada shalat sendirian. (HR. Bukhari & Muslim)",
-"Sesungguhnya orang yang paling aku cintai adalah yang paling baik akhlaknya. (HR. Tirmidzi)",
-"Sesungguhnya dunia itu manis dan hijau. (HR. Muslim)",
+    "Orang yang paling dekat denganku di hari kiamat adalah yang paling baik akhlaknya. (HR. Tirmidzi)",
+    "Sesungguhnya agama itu mudah. (HR. Bukhari)",
+    "Barangsiapa membantu saudaranya maka Allah akan membantunya. (HR. Muslim)",
+    "Sesungguhnya Allah menyukai jika seseorang melakukan pekerjaan dengan baik. (HR. Baihaqi)",
+    "Barangsiapa menempuh jalan mencari ilmu maka Allah mudahkan jalannya menuju surga. (HR. Muslim)",
+    "Sesungguhnya doa adalah senjata orang mukmin. (HR. Hakim)",
+    "Barangsiapa membaca satu huruf dari Al-Qur'an maka baginya satu kebaikan. (HR. Tirmidzi)",
+    "Shalat berjamaah lebih utama daripada shalat sendirian. (HR. Bukhari & Muslim)",
+    "Sesungguhnya orang yang paling aku cintai adalah yang paling baik akhlaknya. (HR. Tirmidzi)",
+    "Sesungguhnya dunia itu manis dan hijau. (HR. Muslim)",
 
-"Berbaktilah kepada kedua orang tuamu. (HR. Bukhari)",
-"Ridha Allah tergantung pada ridha orang tua. (HR. Tirmidzi)",
-"Barangsiapa tidak menyayangi maka ia tidak akan disayangi. (HR. Bukhari & Muslim)",
-"Allah mencintai orang yang dermawan. (HR. Tirmidzi)",
-"Sesungguhnya Allah itu indah dan menyukai keindahan. (HR. Muslim)",
-"Orang mukmin tidak suka mencela. (HR. Tirmidzi)",
-"Orang mukmin bukanlah orang yang suka melaknat. (HR. Tirmidzi)",
-"Barangsiapa menjaga lisannya maka ia selamat. (HR. Tirmidzi)",
-"Sesungguhnya malu adalah bagian dari iman. (HR. Bukhari & Muslim)",
-"Kejujuran membawa kepada surga. (HR. Bukhari & Muslim)",
+    "Berbaktilah kepada kedua orang tuamu. (HR. Bukhari)",
+    "Ridha Allah tergantung pada ridha orang tua. (HR. Tirmidzi)",
+    "Barangsiapa tidak menyayangi maka ia tidak akan disayangi. (HR. Bukhari & Muslim)",
+    "Allah mencintai orang yang dermawan. (HR. Tirmidzi)",
+    "Sesungguhnya Allah itu indah dan menyukai keindahan. (HR. Muslim)",
+    "Orang mukmin tidak suka mencela. (HR. Tirmidzi)",
+    "Orang mukmin bukanlah orang yang suka melaknat. (HR. Tirmidzi)",
+    "Barangsiapa menjaga lisannya maka ia selamat. (HR. Tirmidzi)",
+    "Sesungguhnya malu adalah bagian dari iman. (HR. Bukhari & Muslim)",
+    "Kejujuran membawa kepada surga. (HR. Bukhari & Muslim)",
 
-"Jangan saling membenci. (HR. Muslim)",
-"Jangan saling memutuskan hubungan. (HR. Muslim)",
-"Bertakwalah kepada Allah di mana pun kamu berada. (HR. Tirmidzi)",
-"Ikutilah keburukan dengan kebaikan. (HR. Tirmidzi)",
-"Pergaulilah manusia dengan akhlak yang baik. (HR. Tirmidzi)",
+    "Jangan saling membenci. (HR. Muslim)",
+    "Jangan saling memutuskan hubungan. (HR. Muslim)",
+    "Bertakwalah kepada Allah di mana pun kamu berada. (HR. Tirmidzi)",
+    "Ikutilah keburukan dengan kebaikan. (HR. Tirmidzi)",
+    "Pergaulilah manusia dengan akhlak yang baik. (HR. Tirmidzi)",
 
-"Barangsiapa memberi makan orang yang lapar maka Allah akan memberinya makan di hari kiamat. (HR. Tirmidzi)",
-"Barangsiapa memberi minum orang yang haus maka Allah akan memberinya minum di hari kiamat. (HR. Tirmidzi)",
-"Barangsiapa menolong saudaranya maka Allah akan menolongnya. (HR. Muslim)",
-"Sesungguhnya Allah bersama orang yang sabar. (HR. Muslim)",
-"Sesungguhnya amal yang paling dicintai Allah adalah yang kontinu walau sedikit. (HR. Bukhari & Muslim)",
+    "Barangsiapa memberi makan orang yang lapar maka Allah akan memberinya makan di hari kiamat. (HR. Tirmidzi)",
+    "Barangsiapa memberi minum orang yang haus maka Allah akan memberinya minum di hari kiamat. (HR. Tirmidzi)",
+    "Barangsiapa menolong saudaranya maka Allah akan menolongnya. (HR. Muslim)",
+    "Sesungguhnya Allah bersama orang yang sabar. (HR. Muslim)",
+    "Sesungguhnya amal yang paling dicintai Allah adalah yang kontinu walau sedikit. (HR. Bukhari & Muslim)",
 
-"Allah merahmati orang yang bersikap lembut. (HR. Bukhari)",
-"Jangan meremehkan kebaikan sekecil apa pun. (HR. Muslim)",
-"Barangsiapa berbuat baik maka ia akan mendapatkan kebaikan. (HR. Muslim)",
-"Allah mencintai orang yang bertakwa. (HR. Muslim)",
-"Sesungguhnya Allah mencintai orang yang sabar. (HR. Muslim)",
+    "Allah merahmati orang yang bersikap lembut. (HR. Bukhari)",
+    "Jangan meremehkan kebaikan sekecil apa pun. (HR. Muslim)",
+    "Barangsiapa berbuat baik maka ia akan mendapatkan kebaikan. (HR. Muslim)",
+    "Allah mencintai orang yang bertakwa. (HR. Muslim)",
+    "Sesungguhnya Allah mencintai orang yang sabar. (HR. Muslim)",
 
-"Sesungguhnya Allah mencintai orang yang bertawakal. (HR. Tirmidzi)",
-"Sesungguhnya Allah mencintai orang yang bersyukur. (HR. Muslim)",
-"Sesungguhnya Allah mencintai orang yang bertaubat. (HR. Muslim)",
-"Sesungguhnya Allah mencintai orang yang bersuci. (HR. Bukhari)",
-"Sesungguhnya Allah mencintai orang yang berbuat adil. (HR. Muslim)",
+    "Sesungguhnya Allah mencintai orang yang bertawakal. (HR. Tirmidzi)",
+    "Sesungguhnya Allah mencintai orang yang bersyukur. (HR. Muslim)",
+    "Sesungguhnya Allah mencintai orang yang bertaubat. (HR. Muslim)",
+    "Sesungguhnya Allah mencintai orang yang bersuci. (HR. Bukhari)",
+    "Sesungguhnya Allah mencintai orang yang berbuat adil. (HR. Muslim)",
 
-"Shalat adalah tiang agama. (HR. Baihaqi)",
-"Puasa adalah perisai. (HR. Bukhari & Muslim)",
-"Zakat membersihkan harta. (HR. Muslim)",
-"Haji yang mabrur tidak ada balasan selain surga. (HR. Bukhari & Muslim)",
-"Orang mukmin yang paling sempurna imannya adalah yang paling baik akhlaknya. (HR. Tirmidzi)",
+    "Shalat adalah tiang agama. (HR. Baihaqi)",
+    "Puasa adalah perisai. (HR. Bukhari & Muslim)",
+    "Zakat membersihkan harta. (HR. Muslim)",
+    "Haji yang mabrur tidak ada balasan selain surga. (HR. Bukhari & Muslim)",
+    "Orang mukmin yang paling sempurna imannya adalah yang paling baik akhlaknya. (HR. Tirmidzi)",
 
-"Barangsiapa mengingat Allah maka Allah akan mengingatnya. (HR. Bukhari)",
-"Sesungguhnya dzikir menenangkan hati. (HR. Muslim)",
-"Perbanyaklah mengingat Allah. (HR. Tirmidzi)",
-"Orang yang berdzikir dan yang tidak seperti orang hidup dan mati. (HR. Bukhari)",
-"Allah dekat dengan hamba yang berdoa kepada-Nya. (HR. Muslim)"
+    "Barangsiapa mengingat Allah maka Allah akan mengingatnya. (HR. Bukhari)",
+    "Sesungguhnya dzikir menenangkan hati. (HR. Muslim)",
+    "Perbanyaklah mengingat Allah. (HR. Tirmidzi)",
+    "Orang yang berdzikir dan yang tidak seperti orang hidup dan mati. (HR. Bukhari)",
+    "Allah dekat dengan hamba yang berdoa kepada-Nya. (HR. Muslim)"
 
 ]
 // ======================
@@ -195,7 +195,7 @@ let prayerTimes = {
     wita: {},
     wit: {}
 }
-
+let qrGlobal = ""; // simpan QR terbaru
 let broadcastQueue = []
 let isBroadcasting = false
 function zoneExample(zone) {
@@ -696,7 +696,27 @@ setInterval(async () => {
     }
 
 }, 60000)
+const app = express();
+const PORT = process.env.PORT || 3000;
 
+// Endpoint untuk QR
+app.get("/qr", async (req, res) => {
+    if (!qrGlobal) return res.send("❌ QR belum tersedia, bot mungkin sudah login.");
+
+    try {
+        const qrDataUrl = await qrcode.toDataURL(qrGlobal);
+        res.send(`
+            <h1>Scan QR WhatsApp</h1>
+            <img src="${qrDataUrl}" />
+        `);
+    } catch (err) {
+        res.send("❌ Error generate QR: " + err.message);
+    }
+});
+
+app.listen(PORT, () => {
+    console.log(`🌐 Server QR berjalan di port ${PORT}`);
+});
 async function startBot() {
     await new Promise(r => setTimeout(r, 3000))
     const { state, saveCreds } = await useMultiFileAuthState("./baileys_auth");
@@ -738,12 +758,12 @@ async function startBot() {
     sock.ev.on("creds.update", saveCreds);
 
     sock.ev.on("connection.update", async (update) => {
-
-        const { connection, lastDisconnect, qr } = update
+        const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
-            console.log("📱 Scan QR:")
-            qrcode.generate(qr, { small: true })
+            qrGlobal = qr; // simpan QR terbaru
+            console.log("📱 QR tersedia, buka /qr di browser untuk scan");
+            // jangan pakai qrcode.generate(qr) lagi
         }
 
         if (connection === "close") {
