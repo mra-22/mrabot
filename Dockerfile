@@ -7,9 +7,10 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     git \
     ca-certificates \
+    && pip3 install yt-dlp \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
-
+    
 WORKDIR /app
 
 COPY package*.json ./
