@@ -1,20 +1,22 @@
 FROM node:22-slim
 
-# Install dependency penting
 RUN apt-get update && apt-get install -y \
     python3 \
-    python3-pip \
     ffmpeg \
     git \
     ca-certificates \
-    && pip3 install yt-dlp \
+    curl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
-    
+
+# Install yt-dlp manual (lebih stabil)
+RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
+    -o /usr/local/bin/yt-dlp \
+    && chmod a+rx /usr/local/bin/yt-dlp
+
 WORKDIR /app
 
 COPY package*.json ./
-
 RUN npm install
 
 COPY . .
