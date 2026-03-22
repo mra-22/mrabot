@@ -4,13 +4,14 @@ import re
 import subprocess
 import json
 from yt_dlp import YoutubeDL
-from playwright.sync_api import sync_playwright
 
 if len(sys.argv) < 2:
     print("[DOWNLOAD ERROR] Judul lagu tidak diberikan", file=sys.stderr)
     sys.exit(1)
 
 query = " ".join(sys.argv[1:])
+search_keyword = f"ytsearch5:{query}"
+
 output_dir = "audios"
 os.makedirs(output_dir, exist_ok=True)
 
@@ -48,47 +49,79 @@ def convert_to_mp3(input_path):
     return None
 
 
-# 🔥 AMBIL VIDEO VIA BROWSER (ANTI BLOCK)
-def get_video_url(query):
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
-
-        page.goto(f"https://www.youtube.com/results?search_query={query}")
-
-        page.wait_for_selector("ytd-video-renderer", timeout=10000)
-
-        video = page.query_selector("ytd-video-renderer a#video-title")
-
-        if not video:
-            browser.close()
-            raise Exception("Tidak menemukan video")
-
-        url = video.get_attribute("href")
-        title = video.get_attribute("title")
-
-        browser.close()
-
-        return "https://www.youtube.com" + url, title
-
-
 try:
-    # ================= SEARCH VIA PLAYWRIGHT =================
-    video_url, raw_title = get_video_url(query)
+    cookies_file = "ytcookies.txt"
 
-    title = sanitize_filename(raw_title or "audio")
-    output_path = os.path.join(output_dir, f"{title}.mp4")
+    # ================= SEARCH =================
+    ydl_opts_info = {
+        "quiet": True,
+        "skip_download": True,
+        "noplaylist": True,
+        "default_search": "ytsearch",
 
-    # ================= DOWNLOAD (PAKAI yt-dlp TETAP) =================
+        # 🔥 FIX JS RUNTIME
+        "js_runtimes": {
+            "node": {
+                "path": "/usr/bin/node"
+            }
+        },
+
+        # 🔥 FIX YOUTUBE CLIENT
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["web"]
+            }
+        }
+    }
+
+    if os.path.exists(cookies_file):
+        ydl_opts_info["cookiefile"] = cookies_file
+
+    with YoutubeDL(ydl_opts_info) as ydl:
+        search_result = ydl.extract_info(search_keyword, download=False)
+
+        entries = search_result.get("entries", [])
+
+        # 🔥 ANTI CRASH
+        if not entries or entries[0] is None:
+            raise Exception("Video gagal diambil (kemungkinan diblok YouTube)")
+
+        video_info = entries[0]
+
+        video_url = video_info.get("webpage_url")
+        if not video_url:
+            raise Exception("Gagal mendapatkan URL video")
+
+        title = sanitize_filename(video_info.get("title", "audio"))
+        output_path = os.path.join(output_dir, f"{title}.mp4")
+
+    # ================= DOWNLOAD =================
     ydl_opts_download = {
         "format": "bestaudio/best",
         "quiet": True,
         "outtmpl": output_path,
         "noplaylist": True,
+
+        # 🔥 FIX JS RUNTIME
+        "js_runtimes": {
+            "node": {
+                "path": "/usr/bin/node"
+            }
+        },
+
+        # 🔥 FIX CLIENT
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["web"]
+            }
+        }
     }
 
-    with YoutubeDL(ydl_opts_download) as ydl:
-        info = ydl.extract_info(video_url, download=True)
+    if os.path.exists(cookies_file):
+        ydl_opts_download["cookiefile"] = cookies_file
+
+    with YoutubeDL(ydl_opts_download) as ydl2:
+        ydl2.download([video_url])
 
     if not os.path.exists(output_path):
         raise Exception("File video tidak ditemukan setelah download")
@@ -100,15 +133,15 @@ try:
         raise Exception("Gagal konversi ke MP3")
 
     # ================= OUTPUT =================
-    info_data = {
-        "title": info.get("title", "-"),
-        "uploader": info.get("uploader", "-"),
-        "duration": info.get("duration", 0),
-        "thumbnail": info.get("thumbnail", "")
+    info = {
+        "title": video_info.get("title", "-"),
+        "uploader": video_info.get("uploader", "-"),
+        "duration": video_info.get("duration", 0),
+        "thumbnail": video_info.get("thumbnail", "")
     }
 
     print(f"::MP3::{mp3_path}")
-    print(f"::INFO::{json.dumps(info_data)}")
+    print(f"::INFO::{json.dumps(info)}")
 
 except Exception as e:
     print(f"[DOWNLOAD ERROR] {e}", file=sys.stderr)
