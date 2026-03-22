@@ -28,10 +28,13 @@ def convert_to_mp3(input_path):
             [
                 "ffmpeg",
                 "-y",
-                "-i", input_path,
+                "-i",
+                input_path,
                 "-vn",
-                "-acodec", "libmp3lame",
-                "-b:a", "128k",
+                "-acodec",
+                "libmp3lame",
+                "-b:a",
+                "128k",
                 output_path,
             ],
             stdout=subprocess.DEVNULL,
@@ -81,23 +84,18 @@ try:
         search_result = ydl.extract_info(search_keyword, download=False)
 
         entries = search_result.get("entries", [])
-
-        # 🔥 ANTI CRASH
-        if not entries or entries[0] is None:
-            raise Exception("Video gagal diambil (kemungkinan diblok YouTube)")
+        if not entries:
+            raise Exception("Tidak ada video ditemukan")
 
         video_info = entries[0]
 
-        video_url = video_info.get("webpage_url")
-        if not video_url:
-            raise Exception("Gagal mendapatkan URL video")
-
+        video_url = video_info["webpage_url"]
         title = sanitize_filename(video_info.get("title", "audio"))
         output_path = os.path.join(output_dir, f"{title}.mp4")
 
     # ================= DOWNLOAD =================
     ydl_opts_download = {
-        "format": "bestaudio/best",
+        "format": "bestaudio/best/best",
         "quiet": True,
         "outtmpl": output_path,
         "noplaylist": True,
@@ -109,7 +107,7 @@ try:
             }
         },
 
-        # 🔥 FIX CLIENT
+        # 🔥 FIX YOUTUBE CLIENT
         "extractor_args": {
             "youtube": {
                 "player_client": ["web"]
