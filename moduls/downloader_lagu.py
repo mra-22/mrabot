@@ -53,13 +53,20 @@ def convert_to_mp3(input_path):
 
 
 try:
-    cookies_file = "cookiesyt.txt"
+    cookies_file = "ytcookies.txt"
 
     ydl_opts_info = {
-        "quiet": True,
-        "skip_download": True,
-        "noplaylist": True,
-        "default_search": "ytsearch",
+    "quiet": True,
+    "noplaylist": True,
+    "nocheckcertificate": True,
+    "ignoreerrors": True,
+    "geo_bypass": True,
+    "default_search": "ytsearch",
+    "extractor_args": {
+        "youtube": {
+            "player_client": ["android", "web"]
+            }
+        }
     }
 
     if os.path.exists(cookies_file):
@@ -81,12 +88,18 @@ try:
 
     # ================= DOWNLOAD =================
     ydl_opts_download = {
-        "format": "bestaudio/best",
         "quiet": True,
-        "outtmpl": output_path,
         "noplaylist": True,
-    }
-
+        "nocheckcertificate": True,
+        "ignoreerrors": True,
+        "geo_bypass": True,
+        "default_search": "ytsearch",
+        "extractor_args": {
+        "youtube": {
+            "player_client": ["android", "web"]
+            }
+        }
+    }    
     if os.path.exists(cookies_file):
         ydl_opts_download["cookiefile"] = cookies_file
 
