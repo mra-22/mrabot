@@ -1,11 +1,10 @@
-FROM node:22-slim
+FROM node:22-bullseye-slim
 
+# Install minimal dependencies
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     ffmpeg \
-    git \
-    ca-certificates \
     && pip3 install --no-cache-dir yt-dlp \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
@@ -17,4 +16,4 @@ RUN npm install
 
 COPY . .
 
-CMD ["npm", "start"]
+CMD ["node", "index.js"]
