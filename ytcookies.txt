@@ -1,0 +1,3 @@
+ydl_opts = {
+    'cookiefile': 'ytcookies.txt'
+}
