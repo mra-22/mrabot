@@ -17,7 +17,7 @@ os.makedirs(output_dir, exist_ok=True)
 
 
 def sanitize_filename(name):
-    return re.sub(r"[^a-zA-Z0-9]", "", name).strip().lower()
+    return re.sub(r"[^a-zA-Z0-9]", "_", name).strip("_").lower()
 
 
 def convert_to_mp3(input_path):
@@ -53,18 +53,23 @@ def convert_to_mp3(input_path):
 
 
 try:
-    cookies_file = "ytcookies.txt"
+    cookies_file = "cookiesyt.txt"
 
     ydl_opts_info = {
-    "quiet": True,
-    "noplaylist": True,
-    "nocheckcertificate": True,
-    "ignoreerrors": True,
-    "geo_bypass": True,
-    "default_search": "ytsearch",
-    "extractor_args": {
-        "youtube": {
-            "player_client": ["web"]
+        "quiet": True,
+        "skip_download": True,
+        "noplaylist": True,
+        "default_search": "ytsearch",
+
+        # 🔥 TAMBAHAN WAJIB (biar gak kena signature error)
+        "js_runtimes": {
+            "node": {
+                "path": "node"
+            }
+        },
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["web"]
             }
         }
     }
@@ -72,13 +77,15 @@ try:
     if os.path.exists(cookies_file):
         ydl_opts_info["cookiefile"] = cookies_file
 
-    # ================= SEARCH =================
+    # ================= SEARCH VIDEO =================
     with YoutubeDL(ydl_opts_info) as ydl:
         search_result = ydl.extract_info(search_keyword, download=False)
 
         entries = search_result.get("entries", [])
-        if not entries:
-            raise Exception("Tidak ada video ditemukan")
+
+        # 🔥 TAMBAHAN ANTI ERROR
+        if not entries or entries[0] is None:
+            raise Exception("Tidak ada video ditemukan / diblok YouTube")
 
         video_info = entries[0]
 
@@ -86,20 +93,26 @@ try:
         title = sanitize_filename(video_info.get("title", "audio"))
         output_path = os.path.join(output_dir, f"{title}.mp4")
 
-    # ================= DOWNLOAD =================
+    # ================= DOWNLOAD VIDEO =================
     ydl_opts_download = {
+        "format": "bestaudio/best",
         "quiet": True,
+        "outtmpl": output_path,
         "noplaylist": True,
-        "nocheckcertificate": True,
-        "ignoreerrors": True,
-        "geo_bypass": True,
-        "default_search": "ytsearch",
+
+        # 🔥 TAMBAHAN WAJIB
+        "js_runtimes": {
+            "node": {
+                "path": "node"
+            }
+        },
         "extractor_args": {
-        "youtube": {
-            "player_client": ["web"]
+            "youtube": {
+                "player_client": ["web"]
             }
         }
-    }    
+    }
+
     if os.path.exists(cookies_file):
         ydl_opts_download["cookiefile"] = cookies_file
 
@@ -115,12 +128,12 @@ try:
     if not mp3_path or not os.path.exists(mp3_path):
         raise Exception("Gagal konversi ke MP3")
 
-    # ================= OUTPUT =================
+    # ================= OUTPUT UNTUK NODE =================
     info = {
         "title": video_info.get("title", "-"),
         "uploader": video_info.get("uploader", "-"),
         "duration": video_info.get("duration", 0),
-        "thumbnail": video_info.get("thumbnail", ""),
+        "thumbnail": video_info.get("thumbnail", "")
     }
 
     print(f"::MP3::{mp3_path}")
