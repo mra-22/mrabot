@@ -7,31 +7,11 @@ RUN apt-get update && apt-get install -y \
     git \
     curl \
     ca-certificates \
-    # 🔥 tambahan playwright deps
-    wget \
-    gnupg \
-    libnss3 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libcups2 \
-    libdrm2 \
-    libxkbcommon0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxrandr2 \
-    libgbm1 \
-    libasound2 \
-    libpangocairo-1.0-0 \
-    libpango-1.0-0 \
-    libgtk-3-0 \
-    libxshmfence1 \
-    libglu1 \
-    && pip3 install --no-cache-dir yt-dlp requests playwright --break-system-packages \
-    # 🔥 install browser playwright
-    && playwright install chromium \
+    && pip3 install --no-cache-dir yt-dlp requests --break-system-packages \
+    && npm install -g node \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
-
+    
 WORKDIR /app
 
 COPY package*.json ./
