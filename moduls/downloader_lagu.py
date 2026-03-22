@@ -64,7 +64,7 @@ try:
     "default_search": "ytsearch",
     "extractor_args": {
         "youtube": {
-            "player_client": ["android", "web"]
+            "player_client": ["web"]
             }
         }
     }
@@ -96,7 +96,7 @@ try:
         "default_search": "ytsearch",
         "extractor_args": {
         "youtube": {
-            "player_client": ["android", "web"]
+            "player_client": ["web"]
             }
         }
     }    
