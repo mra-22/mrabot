@@ -5,7 +5,7 @@ import util from "util";
 import { getSenderRawId, resolveToMainId } from "../moduls/user.js";
 
 const execPromise = util.promisify(exec);
-const pythonCmd = process.platform === "win32" ? "py" : "python3"; 
+const pythonCmd = process.platform === "win32" ? "py" : "python3";
 const DOWNLOAD_DIR = path.resolve("./videos");
 const downloadingUsers = new Set();
 
@@ -235,34 +235,78 @@ export async function play(sock, msg, from, sender, cmd, args) {
     const query = args.join(" ");
 
     if (!query) {
-        return sock.sendMessage(from, {
-            text: `╭──📥 DOWNLOADER ──⬣
+        return sock.sendMessage(
+            from,
+            {
+                text: `╭──📥 DOWNLOADER ──⬣
 │❗ Masukkan judul lagu.
 │📌 Contoh: *.play alan walker faded*
-╰⬣`
-        }, { quoted: msg });
+╰⬣`,
+            },
+            { quoted: msg }
+        );
+    }
+
+    const userDB = JSON.parse(
+        fs.readFileSync("./database/user.json", "utf-8")
+    );
+    const rawId = getSenderRawId(msg);
+    const userKey = resolveToMainId(rawId);
+    const user = userDB?.[String(userKey)] ?? null;
+
+    if (!user) {
+        return sock.sendMessage(
+            from,
+            {
+                text: `╭──🎵 PLAY ──⬣
+│🚫 Kamu belum terdaftar.
+│✅ Gunakan *!daftar* untuk mendaftar!
+╰⬣`,
+            },
+            { quoted: msg }
+        );
+    }
+
+    if (typeof user.Vidlimit !== "number") user.Vidlimit = 0;
+
+    if (user.Vidlimit <= 0) {
+        return sock.sendMessage(
+            from,
+            {
+                text: `╭──🎵 PLAY ──⬣
+│🚫 Limit unduhan kamu habis.
+│🎁 Gunakan *!lmclaim* untuk klaim limit harian.
+╰⬣`,
+            },
+            { quoted: msg }
+        );
     }
 
     await sock.sendMessage(from, { react: { text: "⏳", key: msg.key } });
 
-    await sock.sendMessage(from, {
-        text: `🔍 Mencari lagu *${query}*...`
-    }, { quoted: msg });
+    await sock.sendMessage(
+        from,
+        { text: `🔍 Mencari lagu *${query}*...` },
+        { quoted: msg }
+    );
 
     try {
         const { stdout, stderr } = await execPromise(
-        `node ./moduls/downloader-gg.cjs ${JSON.stringify(query)}`
+            `${pythonCmd} ./moduls/downloader_lagu.py "${query}"`
         );
-        
-        if (stderr) console.error(stderr);
-        
+
+        if (stderr) console.error("[PYTHON STDERR]", stderr);
+
         const mp3Match = stdout.match(/::MP3::(.+)/);
         const infoMatch = stdout.match(/::INFO::({.*})/);
+
         if (!mp3Match) {
             await sock.sendMessage(from, { react: { text: "❌", key: msg.key } });
-            return sock.sendMessage(from, {
-                text: `❌ Gagal mengunduh lagu.`
-            }, { quoted: msg });
+            return sock.sendMessage(
+                from,
+                { text: `❌ Tidak dapat menemukan atau mengunduh lagu.` },
+                { quoted: msg }
+            );
         }
 
         const mp3Path = mp3Match[1].trim();
@@ -277,39 +321,54 @@ export async function play(sock, msg, from, sender, cmd, args) {
         const caption = `╭━━━〔 🎵 PLAY MUSIC 〕━━━⬣
 ┃ 🎧 Judul   : ${info.title || "-"}
 ┃ 📺 Channel : ${info.uploader || "-"}
-┃ ⏱️ Durasi  : ${info.duration || "-"}
+┃ ⏱️ Durasi  : ${formatDuration(info.duration)}
 ╰━━━━━━━━━━━━━━━━⬣`;
 
         if (info.thumbnail) {
-            await sock.sendMessage(from, {
-                image: { url: info.thumbnail },
-                caption
-            }, { quoted: msg });
+            await sock.sendMessage(
+                from,
+                {
+                    image: { url: info.thumbnail },
+                    caption: caption
+                },
+                { quoted: msg }
+            );
         } else {
-            await sock.sendMessage(from, {
-                text: caption
-            }, { quoted: msg });
+            await sock.sendMessage(
+                from,
+                { text: caption },
+                { quoted: msg }
+            );
         }
-
-        // 🔥 KIRIM AUDIO
         const audioBuffer = fs.readFileSync(mp3Path);
+        console.log("PATH AUDIO:", mp3Path);
+        console.log("FILE ADA:", fs.existsSync(mp3Path));
 
-        await sock.sendMessage(from, {
-            audio: audioBuffer,
-            mimetype: "audio/mpeg",
-            fileName: "music.mp3"
-        }, { quoted: msg });
-
+        await sock.sendMessage(
+            from,
+            {
+                audio: audioBuffer,
+                mimetype: "audio/mpeg",
+                fileName: "music.mp3",
+                ptt: false
+            },
+            { quoted: msg }
+        );
+        fs.unlinkSync(mp3Path);
         await sock.sendMessage(from, { react: { text: "✅", key: msg.key } });
 
-    } catch (err) {
-        console.error(err);
-
+        user.Vidlimit -= 1;
+        userDB[userKey] = user;
+        fs.writeFileSync("./database/user.json", JSON.stringify(userDB, null, 2));
+    } catch (e) {
+        console.error(e);
         await sock.sendMessage(from, { react: { text: "❌", key: msg.key } });
 
-        await sock.sendMessage(from, {
-            text: `⚠️ Gagal memproses lagu.`
-        }, { quoted: msg });
+        await sock.sendMessage(
+            from,
+            { text: `⚠️ Gagal memproses permintaan.` },
+            { quoted: msg }
+        );
     }
 }
 
