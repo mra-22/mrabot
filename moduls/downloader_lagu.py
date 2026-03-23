@@ -94,26 +94,29 @@ try:
         output_path = os.path.join(output_dir, f"{title}.mp4")
 
     # ================= DOWNLOAD =================
-    ydl_opts_download = {
-        "format": "bestaudio/best/best",
-        "quiet": True,
-        "outtmpl": output_path,
-        "noplaylist": True,
+   ydl_opts_download = {
+    "format": "bestaudio[ext=m4a]/bestaudio/best",
+    "quiet": True,
+    "outtmpl": output_path,
+    "noplaylist": True,
+    "nocheckcertificate": True,
+    "ignoreerrors": True,
+    "geo_bypass": True,
+    "retries": 5,
+    "fragment_retries": 5,
 
-        # 🔥 FIX JS RUNTIME
-        "js_runtimes": {
-            "node": {
-                "path": "/usr/bin/node"
-            }
-        },
+    "js_runtimes": {
+        "node": {
+            "path": "/usr/bin/node"
+        }
+    },
 
-        # 🔥 FIX YOUTUBE CLIENT
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["web"]
-            }
+    "extractor_args": {
+        "youtube": {
+            "player_client": ["android", "web"]
         }
     }
+}
 
     if os.path.exists(cookies_file):
         ydl_opts_download["cookiefile"] = cookies_file
