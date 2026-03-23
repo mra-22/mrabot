@@ -1,14 +1,11 @@
 FROM node:20-slim
 
+# install ffmpeg saja (wajib untuk convert mp3)
 RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
     ffmpeg \
     curl \
     ca-certificates \
-    git \
     --no-install-recommends \
-    && pip3 install --no-cache-dir -U yt-dlp requests --break-system-packages \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -16,11 +13,9 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 
-# opsional (hapus kalau berat)
-RUN npx playwright install chromium
-
 COPY . .
 
-RUN mkdir -p audios videos
+# folder untuk audio
+RUN mkdir -p audios
 
 CMD ["node", "index.js"]
