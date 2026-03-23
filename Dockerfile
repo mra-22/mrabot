@@ -1,32 +1,30 @@
 FROM node:20-slim
 
-# 🔥 Install system deps (TERMASUK GIT WAJIB)
+# 🔥 Install dependency penting saja
 RUN apt-get update && apt-get install -y \
-    git \
-    python3 \
-    python3-pip \
     ffmpeg \
     curl \
     ca-certificates \
     --no-install-recommends \
-    && pip3 install --no-cache-dir -U yt-dlp requests --break-system-packages \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# 🔥 COPY dulu baru install (biar cache aman)
+# 🔥 Copy package dulu (biar cache optimal)
 COPY package*.json ./
 
-# 🔥 FIX npm issue
-RUN npm config set fund false && npm config set audit false
+# 🔥 Fix npm & install deps
+RUN npm config set fund false \
+    && npm config set audit false \
+    && npm install --omit=dev
 
-RUN npm install
-
-# 🔥 OPTIONAL (hapus kalau berat)
-RUN npx playwright install chromium
-
+# 🔥 Copy semua file project
 COPY . .
 
+# 🔥 Folder output
 RUN mkdir -p audios videos
+
+# 🔥 Production mode
+ENV NODE_ENV=production
 
 CMD ["node", "index.js"]
