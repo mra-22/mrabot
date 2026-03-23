@@ -42,10 +42,6 @@
     "strip-ansi": "^7.1.1",
     "twemoji": "^14.0.1",
     "uuid": "^13.0.0",
-    "wa-sticker-formatter": "^4.4.4",  
-    "ytdl-core": "^4.11.5",
-    "yt-search": "^2.10.4",
-    "fluent-ffmpeg": "^2.1.2",
-    "ffmpeg-static": "^5.2.0"
+    "wa-sticker-formatter": "^4.4.4"
   }
 }
