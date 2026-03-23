@@ -1,7 +1,9 @@
 FROM node:20-slim
 
-# 🔥 Install dependency penting saja
 RUN apt-get update && apt-get install -y \
+    git \
+    python3 \
+    python3-pip \
     ffmpeg \
     curl \
     ca-certificates \
@@ -10,21 +12,14 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# 🔥 Copy package dulu (biar cache optimal)
 COPY package*.json ./
 
-# 🔥 Fix npm & install deps
 RUN npm config set fund false \
-    && npm config set audit false \
-    && npm install --omit=dev
+ && npm config set audit false \
+ && npm install --omit=dev
 
-# 🔥 Copy semua file project
 COPY . .
 
-# 🔥 Folder output
 RUN mkdir -p audios videos
-
-# 🔥 Production mode
-ENV NODE_ENV=production
 
 CMD ["node", "index.js"]
