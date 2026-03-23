@@ -5,6 +5,7 @@ import subprocess
 import json
 from yt_dlp import YoutubeDL
 
+# ================= VALIDASI INPUT =================
 if len(sys.argv) < 2:
     print("[DOWNLOAD ERROR] Judul lagu tidak diberikan", file=sys.stderr)
     sys.exit(1)
@@ -16,6 +17,7 @@ output_dir = "audios"
 os.makedirs(output_dir, exist_ok=True)
 
 
+# ================= HELPER =================
 def sanitize_filename(name):
     return re.sub(r"[^a-zA-Z0-9]", "_", name).strip("_").lower()
 
@@ -28,13 +30,10 @@ def convert_to_mp3(input_path):
             [
                 "ffmpeg",
                 "-y",
-                "-i",
-                input_path,
+                "-i", input_path,
                 "-vn",
-                "-acodec",
-                "libmp3lame",
-                "-b:a",
-                "128k",
+                "-acodec", "libmp3lame",
+                "-b:a", "128k",
                 output_path,
             ],
             stdout=subprocess.DEVNULL,
@@ -62,17 +61,17 @@ try:
         "noplaylist": True,
         "default_search": "ytsearch",
 
-        # 🔥 FIX JS RUNTIME
+        # 🔥 Fix JS runtime
         "js_runtimes": {
             "node": {
                 "path": "/usr/bin/node"
             }
         },
 
-        # 🔥 FIX YOUTUBE CLIENT
+        # 🔥 Fix YouTube client
         "extractor_args": {
             "youtube": {
-                "player_client": ["web"]
+                "player_client": ["android", "web"]
             }
         }
     }
@@ -94,26 +93,28 @@ try:
         output_path = os.path.join(output_dir, f"{title}.mp4")
 
     # ================= DOWNLOAD =================
-   ydl_opts_download = {
-    "format": "bestaudio[ext=m4a]/bestaudio/best",
-    "quiet": True,
-    "outtmpl": output_path,
-    "noplaylist": True,
-    "nocheckcertificate": True,
-    "ignoreerrors": True,
-    "geo_bypass": True,
-    "retries": 5,
-    "fragment_retries": 5,
+    ydl_opts_download = {
+        "format": "bestaudio[ext=m4a]/bestaudio/best",
+        "quiet": True,
+        "outtmpl": output_path,
+        "noplaylist": True,
 
-    "js_runtimes": {
-        "node": {
-            "path": "/usr/bin/node"
-        }
-    },
+        # 🔥 Anti error YouTube
+        "nocheckcertificate": True,
+        "ignoreerrors": True,
+        "geo_bypass": True,
+        "retries": 5,
+        "fragment_retries": 5,
 
-    "extractor_args": {
-        "youtube": {
-            "player_client": ["android", "web"]
+        "js_runtimes": {
+            "node": {
+                "path": "/usr/bin/node"
+            }
+        },
+
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "web"]
             }
         }
     }
@@ -125,7 +126,7 @@ try:
         ydl2.download([video_url])
 
     if not os.path.exists(output_path):
-        raise Exception("File video tidak ditemukan setelah download")
+        raise Exception("File tidak ditemukan setelah download")
 
     # ================= CONVERT =================
     mp3_path = convert_to_mp3(output_path)
