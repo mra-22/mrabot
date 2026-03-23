@@ -58,14 +58,7 @@ try:
     ydl_opts_info = {
         "quiet": True,
         "skip_download": True,
-        "noplaylist": True,
         "default_search": "ytsearch",
-    
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["web_creator", "web"]
-            }
-        }
     }
 
     if os.path.exists(cookies_file):
@@ -85,8 +78,8 @@ try:
         output_path = os.path.join(output_dir, f"{title}.mp4")
 
     # ================= DOWNLOAD =================
-    ydl_opts_download = {
-        "format": "bestaudio/best",
+   ydl_opts_download = {
+        "format": "bestaudio",
         "quiet": True,
         "outtmpl": output_path,
         "noplaylist": True,
@@ -97,16 +90,8 @@ try:
     
         "retries": 10,
         "fragment_retries": 10,
-        "extractor_retries": 5,
     
-        "skip_unavailable_fragments": True,
-        "concurrent_fragment_downloads": 1,
-    
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["web_creator", "web"]
-            }
-        }
+        # 🔥 TANPA extractor_args dulu
     }
 
     if os.path.exists(cookies_file):
