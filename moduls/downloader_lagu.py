@@ -60,11 +60,10 @@ try:
         "skip_download": True,
         "noplaylist": True,
         "default_search": "ytsearch",
-
-        # 🔥 Fix YouTube client
+    
         "extractor_args": {
             "youtube": {
-                "player_client": ["ios", "web"]
+                "player_client": ["web_creator", "web"]
             }
         }
     }
@@ -87,21 +86,25 @@ try:
 
     # ================= DOWNLOAD =================
     ydl_opts_download = {
-        "format": "bestaudio[ext=m4a]/bestaudio/best",
+        "format": "bestaudio/best",
         "quiet": True,
         "outtmpl": output_path,
         "noplaylist": True,
-        "compat_opts": ["no-youtube-unavailable-videos"],
-        # 🔥 Anti error YouTube
+    
         "nocheckcertificate": True,
         "ignoreerrors": True,
         "geo_bypass": True,
-        "retries": 5,
-        "fragment_retries": 5,
-
+    
+        "retries": 10,
+        "fragment_retries": 10,
+        "extractor_retries": 5,
+    
+        "skip_unavailable_fragments": True,
+        "concurrent_fragment_downloads": 1,
+    
         "extractor_args": {
             "youtube": {
-                "player_client": ["ios", "web"]
+                "player_client": ["web_creator", "web"]
             }
         }
     }
