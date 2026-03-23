@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 
 # opsional (hapus kalau berat)
 RUN npx playwright install chromium
