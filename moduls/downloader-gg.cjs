@@ -1,97 +1,125 @@
-const axios = require("axios");
-const cheerio = require("cheerio");
 const fs = require("fs");
 const path = require("path");
+const yts = require("yt-search");
+const ytdl = require("ytdl-core");
 const ffmpeg = require("fluent-ffmpeg");
-
 
 const query = process.argv.slice(2).join(" ");
 
 if (!query) {
-    console.error("[ERROR] Query kosong");
+    console.error("[DOWNLOAD ERROR] Query kosong");
     process.exit(1);
 }
 
-// 🔥 SCRAPE YOUTUBE SEARCH (tanpa API)
-async function searchYouTube(q) {
-    const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
+const outputDir = "audios";
+if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
 
-    const { data } = await axios.get(url, {
-        headers: {
-            "User-Agent": "Mozilla/5.0"
-        }
-    });
-
-    const videoIdMatch = data.match(/"videoId":"(.*?)"/);
-
-    if (!videoIdMatch) throw new Error("Video tidak ditemukan");
-
-    const videoId = videoIdMatch[1];
-
-    return {
-        url: `https://www.youtube.com/watch?v=${videoId}`,
-        videoId
-    };
+function sanitize(text) {
+    return text.replace(/[^a-z0-9]/gi, "_").toLowerCase();
 }
 
-// 🔥 AMBIL AUDIO VIA PIPED (SELF HOST OPTIONAL)
-async function getAudioLink(videoId) {
-    const api = `https://piped.video/api/v1/streams/${videoId}`;
-
-    const { data } = await axios.get(api);
-
-    const audio = data.audioStreams
-        .sort((a, b) => b.bitrate - a.bitrate)[0];
-
-    if (!audio) throw new Error("Audio tidak tersedia");
-
-    return {
-        url: audio.url,
-        title: data.title,
-        uploader: data.uploader,
-        duration: data.duration,
-        thumbnail: data.thumbnailUrl
-    };
+// 🔥 retry helper
+async function retry(fn, max = 3) {
+    let err;
+    for (let i = 0; i < max; i++) {
+        try {
+            return await fn();
+        } catch (e) {
+            err = e;
+        }
+    }
+    throw err;
 }
 
 (async () => {
     try {
-        const search = await searchYouTube(query);
-        const info = await getAudioLink(search.videoId);
+        // ================= SEARCH =================
+        const search = await yts(query);
 
-        const safeTitle = info.title.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
+        if (!search.videos.length) {
+            throw new Error("Lagu tidak ditemukan");
+        }
 
-        const mp4Path = path.join("audios", `${safeTitle}.mp4`);
-        const mp3Path = path.join("audios", `${safeTitle}.mp3`);
+        const video = search.videos[0];
+        const title = sanitize(video.title);
+        const mp4Path = path.join(outputDir, `${title}.mp4`);
+        const mp3Path = path.join(outputDir, `${title}.mp3`);
 
-        console.log("DOWNLOAD:", info.title);
+        // ================= GET INFO =================
+        const info = await retry(() =>
+            ytdl.getInfo(video.url, {
+                requestOptions: {
+                    headers: {
+                        "user-agent":
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+                    }
+                }
+            })
+        );
 
-        // 🔥 DOWNLOAD FILE
-        const response = await axios({
-            url: info.url,
-            method: "GET",
-            responseType: "stream"
+        if (!info || !info.formats) {
+            throw new Error("Gagal ambil format video");
+        }
+
+        // ================= FILTER AUDIO =================
+        const audioFormats = info.formats
+            .filter(f => f.hasAudio && !f.hasVideo);
+
+        if (!audioFormats.length) {
+            throw new Error("Format audio tidak ditemukan");
+        }
+
+        // 🔥 pilih bitrate terbaik
+        audioFormats.sort((a, b) => (b.audioBitrate || 0) - (a.audioBitrate || 0));
+
+        const bestAudio = audioFormats[0];
+
+        // ================= DOWNLOAD =================
+        await new Promise((resolve, reject) => {
+            const stream = ytdl.downloadFromInfo(info, {
+                format: bestAudio,
+                requestOptions: {
+                    headers: {
+                        "user-agent":
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+                    }
+                }
+            });
+
+            const file = fs.createWriteStream(mp4Path);
+
+            stream.pipe(file);
+
+            stream.on("error", reject);
+            file.on("finish", resolve);
+            file.on("error", reject);
         });
 
-        const writer = fs.createWriteStream(mp4Path);
-        response.data.pipe(writer);
+        if (!fs.existsSync(mp4Path)) {
+            throw new Error("Download gagal");
+        }
 
-        writer.on("finish", () => {
-            // 🔥 CONVERT
+        // ================= CONVERT =================
+        await new Promise((resolve, reject) => {
             ffmpeg(mp4Path)
-                .audioBitrate(192)
+                .audioBitrate(128)
                 .save(mp3Path)
-                .on("end", () => {
-                    fs.unlinkSync(mp4Path);
-
-                    console.log(`::MP3::${mp3Path}`);
-                    console.log(`::INFO::${JSON.stringify(info)}`);
-                })
-                .on("error", (err) => {
-                    console.error("[FFMPEG ERROR]", err);
-                    process.exit(1);
-                });
+                .on("end", resolve)
+                .on("error", reject);
         });
+
+        fs.unlinkSync(mp4Path);
+
+        // ================= OUTPUT =================
+        const result = {
+            title: video.title,
+            uploader: video.author.name,
+            duration: video.seconds,
+            thumbnail: video.thumbnail
+        };
+
+        console.log(`::MP3::${mp3Path}`);
+        console.log(`::INFO::${JSON.stringify(result)}`);
 
     } catch (err) {
         console.error("[DOWNLOAD ERROR]", err.message);
