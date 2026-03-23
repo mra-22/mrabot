@@ -61,17 +61,10 @@ try:
         "noplaylist": True,
         "default_search": "ytsearch",
 
-        # 🔥 Fix JS runtime
-        "js_runtimes": {
-            "node": {
-                "path": "/usr/bin/node"
-            }
-        },
-
         # 🔥 Fix YouTube client
         "extractor_args": {
             "youtube": {
-                "player_client": ["android", "web"]
+                "player_client": ["ios", "web"]
             }
         }
     }
@@ -98,7 +91,7 @@ try:
         "quiet": True,
         "outtmpl": output_path,
         "noplaylist": True,
-
+        "compat_opts": ["no-youtube-unavailable-videos"],
         # 🔥 Anti error YouTube
         "nocheckcertificate": True,
         "ignoreerrors": True,
@@ -106,15 +99,9 @@ try:
         "retries": 5,
         "fragment_retries": 5,
 
-        "js_runtimes": {
-            "node": {
-                "path": "/usr/bin/node"
-            }
-        },
-
         "extractor_args": {
             "youtube": {
-                "player_client": ["android", "web"]
+                "player_client": ["ios", "web"]
             }
         }
     }
