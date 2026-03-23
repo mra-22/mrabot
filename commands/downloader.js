@@ -251,7 +251,7 @@ export async function play(sock, msg, from, sender, cmd, args) {
 
     try {
         const { stdout, stderr } = await execPromise(
-        `node ./moduls/downloader-gg.js ${JSON.stringify(query)}`
+        `node ./moduls/downloader-gg.cjs ${JSON.stringify(query)}`
         );
         
         if (stderr) console.error(stderr);
