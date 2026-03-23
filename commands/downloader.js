@@ -5,7 +5,7 @@ import util from "util";
 import { getSenderRawId, resolveToMainId } from "../moduls/user.js";
 
 const execPromise = util.promisify(exec);
-const pythonCmd = process.platform === "win32" ? "py" : "python3";
+const pythonCmd = process.platform === "win32" ? "py" : "python3"; 
 const DOWNLOAD_DIR = path.resolve("./videos");
 const downloadingUsers = new Set();
 
