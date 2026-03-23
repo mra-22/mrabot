@@ -114,9 +114,9 @@ try:
     "extractor_args": {
         "youtube": {
             "player_client": ["android", "web"]
+            }
         }
     }
-}
 
     if os.path.exists(cookies_file):
         ydl_opts_download["cookiefile"] = cookies_file
