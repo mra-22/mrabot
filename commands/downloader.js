@@ -250,16 +250,14 @@ export async function play(sock, msg, from, sender, cmd, args) {
     }, { quoted: msg });
 
     try {
-        // 🔥 PAKAI NODE DOWNLOADER
         const { stdout, stderr } = await execPromise(
-            `node downloader-gg.js "${query}"`
+        `node ./moduls/downloader-gg.js ${JSON.stringify(query)}`
         );
-
+        
         if (stderr) console.error(stderr);
-
+        
         const mp3Match = stdout.match(/::MP3::(.+)/);
         const infoMatch = stdout.match(/::INFO::({.*})/);
-
         if (!mp3Match) {
             await sock.sendMessage(from, { react: { text: "❌", key: msg.key } });
             return sock.sendMessage(from, {
