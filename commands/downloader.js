@@ -247,41 +247,6 @@ export async function play(sock, msg, from, sender, cmd, args) {
         );
     }
 
-    const userDB = JSON.parse(
-        fs.readFileSync("./database/user.json", "utf-8")
-    );
-    const rawId = getSenderRawId(msg);
-    const userKey = resolveToMainId(rawId);
-    const user = userDB?.[String(userKey)] ?? null;
-
-    if (!user) {
-        return sock.sendMessage(
-            from,
-            {
-                text: `╭──🎵 PLAY ──⬣
-│🚫 Kamu belum terdaftar.
-│✅ Gunakan *!daftar* untuk mendaftar!
-╰⬣`,
-            },
-            { quoted: msg }
-        );
-    }
-
-    if (typeof user.Vidlimit !== "number") user.Vidlimit = 0;
-
-    if (user.Vidlimit <= 0) {
-        return sock.sendMessage(
-            from,
-            {
-                text: `╭──🎵 PLAY ──⬣
-│🚫 Limit unduhan kamu habis.
-│🎁 Gunakan *!lmclaim* untuk klaim limit harian.
-╰⬣`,
-            },
-            { quoted: msg }
-        );
-    }
-
     await sock.sendMessage(from, { react: { text: "⏳", key: msg.key } });
 
     await sock.sendMessage(
@@ -292,7 +257,7 @@ export async function play(sock, msg, from, sender, cmd, args) {
 
     try {
         const { stdout, stderr } = await execPromise(
-            `${pythonCmd} ./moduls/downloader_lagu.py "${query}"`
+            `python3 ./moduls/downloader_lagu.py "${query}"`
         );
 
         if (stderr) console.error("[PYTHON STDERR]", stderr);
@@ -301,17 +266,12 @@ export async function play(sock, msg, from, sender, cmd, args) {
         const infoMatch = stdout.match(/::INFO::({.*})/);
 
         if (!mp3Match) {
-            await sock.sendMessage(from, { react: { text: "❌", key: msg.key } });
-            return sock.sendMessage(
-                from,
-                { text: `❌ Tidak dapat menemukan atau mengunduh lagu.` },
-                { quoted: msg }
-            );
+            throw new Error("MP3 path tidak ditemukan");
         }
 
         const mp3Path = mp3Match[1].trim();
-        let info = {};
 
+        let info = {};
         if (infoMatch) {
             try {
                 info = JSON.parse(infoMatch[1]);
@@ -321,7 +281,7 @@ export async function play(sock, msg, from, sender, cmd, args) {
         const caption = `╭━━━〔 🎵 PLAY MUSIC 〕━━━⬣
 ┃ 🎧 Judul   : ${info.title || "-"}
 ┃ 📺 Channel : ${info.uploader || "-"}
-┃ ⏱️ Durasi  : ${formatDuration(info.duration)}
+┃ ⏱️ Durasi  : ${info.duration || 0} detik
 ╰━━━━━━━━━━━━━━━━⬣`;
 
         if (info.thumbnail) {
@@ -329,20 +289,19 @@ export async function play(sock, msg, from, sender, cmd, args) {
                 from,
                 {
                     image: { url: info.thumbnail },
-                    caption: caption
+                    caption,
                 },
                 { quoted: msg }
             );
         } else {
-            await sock.sendMessage(
-                from,
-                { text: caption },
-                { quoted: msg }
-            );
+            await sock.sendMessage(from, { text: caption }, { quoted: msg });
         }
+
+        if (!fs.existsSync(mp3Path)) {
+            throw new Error("File MP3 tidak ditemukan di path");
+        }
+
         const audioBuffer = fs.readFileSync(mp3Path);
-        console.log("PATH AUDIO:", mp3Path);
-        console.log("FILE ADA:", fs.existsSync(mp3Path));
 
         await sock.sendMessage(
             from,
@@ -350,28 +309,27 @@ export async function play(sock, msg, from, sender, cmd, args) {
                 audio: audioBuffer,
                 mimetype: "audio/mpeg",
                 fileName: "music.mp3",
-                ptt: false
+                ptt: false,
             },
             { quoted: msg }
         );
+
         fs.unlinkSync(mp3Path);
+
         await sock.sendMessage(from, { react: { text: "✅", key: msg.key } });
 
-        user.Vidlimit -= 1;
-        userDB[userKey] = user;
-        fs.writeFileSync("./database/user.json", JSON.stringify(userDB, null, 2));
     } catch (e) {
         console.error(e);
+
         await sock.sendMessage(from, { react: { text: "❌", key: msg.key } });
 
         await sock.sendMessage(
             from,
-            { text: `⚠️ Gagal memproses permintaan.` },
+            { text: `⚠️ Gagal memproses permintaan.\n\n${e.message}` },
             { quoted: msg }
         );
     }
 }
-
 /* ============================================================
    ==================  DOWNLOAD APK  ==========================
    ============================================================*/
