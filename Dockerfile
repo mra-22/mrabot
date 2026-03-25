@@ -1,38 +1,55 @@
-# Gunakan base image Node + Debian
+# Base image Node + Debian
 FROM node:20-bullseye
 
-# Install Python + pip + ffmpeg + dependency lain
+# Install dependencies untuk build Python
 RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
+    wget \
+    build-essential \
+    zlib1g-dev \
+    libncurses5-dev \
+    libgdbm-dev \
+    libnss3-dev \
+    libssl-dev \
+    libreadline-dev \
+    libffi-dev \
+    libsqlite3-dev \
+    libbz2-dev \
     ffmpeg \
     curl \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
+# =====================
+# Install Python 3.12
+# =====================
+WORKDIR /usr/src
+
+RUN wget https://www.python.org/ftp/python/3.12.2/Python-3.12.2.tgz \
+    && tar -xzf Python-3.12.2.tgz \
+    && cd Python-3.12.2 \
+    && ./configure --enable-optimizations \
+    && make -j$(nproc) \
+    && make altinstall
+
+# Pastikan python3.12 tersedia
+RUN ln -s /usr/local/bin/python3.12 /usr/bin/python3 || true
+RUN ln -s /usr/local/bin/pip3.12 /usr/bin/pip3 || true
+
+# =====================
+# Setup app
+# =====================
 WORKDIR /app
 
-# Copy package.json dulu (biar cache jalan)
 COPY package*.json ./
-
-# Install Node dependencies
 RUN npm install --omit=dev
 
-# Copy semua file project
 COPY . .
 
-# Install Python dependencies (yt-dlp WAJIB)
-RUN pip3 install --no-cache-dir yt-dlp
+# Install yt-dlp pakai Python 3.12
+RUN pip3.12 install --no-cache-dir yt-dlp
 
-# Optional: kalau kamu punya requirements.txt
-# RUN pip3 install --no-cache-dir -r requirements.txt
-
-# Set environment biar python aman
 ENV PYTHONUNBUFFERED=1
 
-# Expose port (kalau ada web, kalau bot WA bisa diabaikan)
 EXPOSE 3000
 
-# Run bot kamu
 CMD ["node", "index.js"]
