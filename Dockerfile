@@ -45,8 +45,12 @@ RUN npm install --omit=dev
 
 COPY . .
 
-# Install yt-dlp pakai Python 3.12
-RUN pip3.12 install --no-cache-dir yt-dlp
+# Upgrade pip untuk Python 3.12
+RUN python3.12 -m ensurepip --upgrade || true
+RUN python3.12 -m pip install --upgrade pip
+
+# Install yt-dlp di Python 3.12
+RUN python3.12 -m pip install --no-cache-dir yt-dlp
 
 ENV PYTHONUNBUFFERED=1
 
