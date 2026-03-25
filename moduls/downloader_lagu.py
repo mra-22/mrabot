@@ -85,30 +85,30 @@ try:
         output_path = os.path.join(output_dir, f"{title}.mp4")
 
     # ================= DOWNLOAD =================
-        ydl_opts_download = {
-            "format": "bestaudio/best",
-            "quiet": True,
-            "outtmpl": output_path,
-            "noplaylist": True,
-        
-            "retries": 10,
-            "fragment_retries": 10,
-            "continuedl": True,
-        
-            "force_ipv4": True,
-            "nocheckcertificate": True,
-        
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["android", "web"]
-                }
-            },
-        
-            "http_headers": {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-                "Accept-Language": "en-US,en;q=0.9",
-            },
-        }
+    ydl_opts_download = {
+        "format": "bestaudio[ext=m4a]/bestaudio/best",
+        "quiet": True,
+        "outtmpl": output_path,
+        "noplaylist": True,
+
+        "retries": 10,
+        "fragment_retries": 10,
+        "extractor_retries": 5,
+
+        # 🔥 FIX YOUTUBE TERBARU
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android"]
+            }
+        },
+
+        # 🔥 PENTING BANGET
+        "http_headers": {
+            "User-Agent": "com.google.android.youtube/17.31.35 (Linux; Android 11)",
+        },
+
+        "force_ipv4": True,
+    }
 
     if os.path.exists(cookies_file):
         ydl_opts_download["cookiefile"] = cookies_file
