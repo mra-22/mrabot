@@ -12,7 +12,8 @@ if len(sys.argv) < 2:
 query = " ".join(sys.argv[1:])
 search_keyword = f"ytsearch5:{query}"
 
-output_dir = "audios"
+# ✅ Railway-friendly directory
+output_dir = "/tmp/audios"
 os.makedirs(output_dir, exist_ok=True)
 
 
@@ -55,17 +56,21 @@ def convert_to_mp3(input_path):
 try:
     cookies_file = "cookiesyt.txt"
 
+    # ================= SEARCH =================
     ydl_opts_info = {
         "quiet": True,
         "skip_download": True,
         "noplaylist": True,
         "default_search": "ytsearch",
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
     }
 
     if os.path.exists(cookies_file):
         ydl_opts_info["cookiefile"] = cookies_file
 
-    # ================= SEARCH VIDEO =================
     with YoutubeDL(ydl_opts_info) as ydl:
         search_result = ydl.extract_info(search_keyword, download=False)
 
@@ -74,17 +79,24 @@ try:
             raise Exception("Tidak ada video ditemukan")
 
         video_info = entries[0]
-
         video_url = video_info["webpage_url"]
+
         title = sanitize_filename(video_info.get("title", "audio"))
         output_path = os.path.join(output_dir, f"{title}.mp4")
 
-    # ================= DOWNLOAD VIDEO =================
+    # ================= DOWNLOAD =================
     ydl_opts_download = {
         "format": "bestaudio/best",
         "quiet": True,
         "outtmpl": output_path,
         "noplaylist": True,
+        "retries": 5,
+        "fragment_retries": 5,
+        "continuedl": True,
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
     }
 
     if os.path.exists(cookies_file):
@@ -102,7 +114,7 @@ try:
     if not mp3_path or not os.path.exists(mp3_path):
         raise Exception("Gagal konversi ke MP3")
 
-    # ================= OUTPUT UNTUK NODE =================
+    # ================= OUTPUT =================
     info = {
         "title": video_info.get("title", "-"),
         "uploader": video_info.get("uploader", "-"),
@@ -110,8 +122,8 @@ try:
         "thumbnail": video_info.get("thumbnail", "")
     }
 
-    print(f"::MP3::{mp3_path}")
-    print(f"::INFO::{json.dumps(info)}")
+    print(f"::MP3::{mp3_path}", flush=True)
+    print(f"::INFO::{json.dumps(info)}", flush=True)
 
 except Exception as e:
     print(f"[DOWNLOAD ERROR] {e}", file=sys.stderr)
