@@ -219,8 +219,8 @@ export function startDashboardBridge(sock, ownerNumber) {
                     fs.writeFileSync(STATUS_FILE, "STOPPED")
                     console.log("⚠️ Bot dihentikan via dashboard (hanya otomatis dimatikan)")
 
-                    // 1️⃣ Flag global
-                    BOT_ACTIVE = false;  // matikan safeSendMessage & broadcast otomatis
+                    // 1️⃣ Flag 
+                    globaglobal.BOT_ACTIVE = false; 
                     broadcasting = false; // hentikan proses broadcast jika ada
                     stopBroadcast = true; // hentikan queue broadcast
                     isBroadcasting = false;
@@ -271,7 +271,7 @@ export function startDashboardBridge(sock, ownerNumber) {
                     console.log("✅ Bot diaktifkan kembali via dashboard")
 
                     // 1️⃣ Aktifkan flag global
-                    BOT_ACTIVE = true;
+                    global.BOT_ACTIVE = true;
 
                     // 2️⃣ Reset sentToday supaya semua scheduler bisa jalan lagi
                     sentToday = {
