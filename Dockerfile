@@ -41,7 +41,9 @@ RUN pip install --no-cache-dir \
     yt-dlp \
     requests \
     beautifulsoup4 \
-    playwright
+    playwright \
+    flask \
+    flask-cors
 
 # Install browser (ringan: chromium saja)
 RUN playwright install chromium
