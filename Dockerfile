@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 
-# Install dependencies
+# Install dependencies (ringan + penting)
 RUN apt-get update && apt-get install -y \
     curl \
     git \
@@ -10,22 +10,24 @@ RUN apt-get update && apt-get install -y \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
+# Set workdir
 WORKDIR /app
 
-# Copy package.json dulu (biar cache kepakai)
+# Copy package.json dulu (biar cache optimal)
 COPY package*.json ./
 
-# Install npm deps
+# Install dependency Node
 RUN npm install --omit=dev
 
 # Copy semua file
 COPY . .
 
-# Install yt-dlp (WAJIB versi terbaru)
+# Install yt-dlp (WAJIB latest)
 RUN pip install --no-cache-dir -U yt-dlp
 
-# Tambahan penting (biar SSL & request stabil)
+# Env
 ENV PYTHONUNBUFFERED=1
 ENV NODE_ENV=production
 
+# Run bot
 CMD ["node", "index.js"]
