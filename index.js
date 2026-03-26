@@ -183,7 +183,7 @@ function renderIntroCard(template, { userTag, groupName }) {
 // ================= GLOBAL =================
 let groupCache = []
 
-let sentToday = {
+global.sentToday = {
     subuh: { wib: false, wita: false, wit: false },
     dzuhur: { wib: false, wita: false, wit: false },
     ashar: { wib: false, wita: false, wit: false },
@@ -534,7 +534,7 @@ async function checkPrayerTime(hour, minute, zone) {
 
     for (const p of prayers) {
 
-        if (sentToday[p.key][zone]) continue
+        if (global.sentToday[p.key][zone]) continue
 
         let timeStr = null
 
@@ -560,7 +560,7 @@ Semoga Allah menerima ibadah kita semua 🤲`
 
         await broadcastAdzan(finalMessage)
 
-        sentToday[p.key][zone] = true
+        global.sentToday[p.key][zone] = true
 
         break
     }
@@ -602,7 +602,7 @@ function startScheduler() {
         try {
 
             // PAGI
-            if (hourWIB === 8 && minuteWIB >= 5 && minuteWIB <= 10 && !sentToday.morning) {
+            if (hourWIB === 8 && minuteWIB >= 5 && minuteWIB <= 10 && !global.sentToday.morning) {
 
                 console.log("🌅 Mengirim pesan pagi...")
 
@@ -610,11 +610,11 @@ function startScheduler() {
 
 Bangun dengan senyum, tarik napas dalam, dan sambut hari dengan semangat baru! 🌿`)
 
-                sentToday.morning = true
+                global.sentToday.morning = true
             }
 
             // MALAM
-            if (hourWIB === 22 && minuteWIB === 2 && !sentToday.night) {
+            if (hourWIB === 22 && minuteWIB === 2 && !global.sentToday.night) {
 
                 console.log("🌙 Mengirim pesan malam...")
 
@@ -622,16 +622,16 @@ Bangun dengan senyum, tarik napas dalam, dan sambut hari dengan semangat baru! �
 
 Hari ini sudah berakhir, saatnya recharge tubuh dan pikiran.`)
 
-                sentToday.night = true
+                global.sentToday.night = true
             }
             // HADITS HARIAN
-            if (hourWITA === 5 && minuteWITA === 15 && !sentToday.hadith) {
+            if (hourWITA === 5 && minuteWITA === 15 && !global.sentToday.hadith) {
 
                 console.log("📜 Mengirim hadits harian...")
 
                 await broadcastHadith()
 
-                sentToday.hadith = true
+                global.sentToday.hadith = true
             }
             await checkPrayerTime(hourWIB, minuteWIB, "wib")
             await checkPrayerTime(hourWITA, minuteWITA, "wita")
@@ -646,7 +646,7 @@ Hari ini sudah berakhir, saatnya recharge tubuh dan pikiran.`)
         // reset harian
         if (hourWIB === 0 && minuteWIB === 1) {
 
-            sentToday = {
+            global.sentToday = {
                 subuh: { wib: false, wita: false, wit: false },
                 dzuhur: { wib: false, wita: false, wit: false },
                 ashar: { wib: false, wita: false, wit: false },
@@ -672,7 +672,7 @@ setInterval(() => {
         console.log(`⚠️ Memory tinggi: ${used.toFixed(2)} MB`)
         global.gc?.()
     }
-
+global.sentToday
 }, 300000)
 // ======================
 // Status siap
