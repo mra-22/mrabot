@@ -4,7 +4,8 @@ import fs from "fs";
 import util from "util";
 import { getSenderRawId, resolveToMainId } from "../moduls/user.js";
 import lyricsFinder from "lyrics-finder";
-
+import axios from "axios";
+import * as cheerio from "cheerio";
 
 const execPromise = util.promisify(exec);
 const pythonCmd = process.platform === "win32" ? "py" : "python3";
@@ -376,42 +377,84 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
             title = query;
         }
 
-        // ================= ENGINE UTAMA =================
-        async function getLyrics(a, t) {
+        // ================= GENIUS SEARCH =================
+        async function searchGenius(q) {
             try {
-                return await lyricsFinder(a, t);
+                const { data } = await axios.get(
+                    `https://genius.com/api/search/multi?q=${encodeURIComponent(q)}`,
+                    {
+                        headers: {
+                            "User-Agent":
+                                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
+                        }
+                    }
+                );
+
+                const sections = data?.response?.sections || [];
+
+                for (const sec of sections) {
+                    for (const hit of sec?.hits || []) {
+                        const r = hit?.result;
+                        if (r?.url && r?.title) {
+                            return {
+                                url: r.url,
+                                title: r.title,
+                                artist: r.primary_artist?.name || ""
+                            };
+                        }
+                    }
+                }
+
+                return null;
             } catch {
                 return null;
             }
         }
 
-        let lyrics =
-            await getLyrics(artist, title) ||
-            await getLyrics("", title) ||
-            await getLyrics(title, artist);
+        // ================= SCRAPE LYRICS =================
+        async function getLyricsFromGenius(url) {
+            try {
+                const { data } = await axios.get(url, {
+                    headers: {
+                        "User-Agent":
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
+                    }
+                });
 
-        // ================= ITUNES FALLBACK =================
+                const $ = cheerio.load(data);
+
+                let lyrics = "";
+
+                $("div[data-lyrics-container='true']").each((i, el) => {
+                    lyrics += $(el).text() + "\n";
+                });
+
+                return lyrics.trim() || null;
+            } catch {
+                return null;
+            }
+        }
+
+        // ================= MAIN FLOW =================
+        let song = await searchGenius(`${artist} ${title}`) ||
+                   await searchGenius(title);
+
+        let lyrics = null;
+
+        if (song?.url) {
+            lyrics = await getLyricsFromGenius(song.url);
+            artist = song.artist || artist;
+            title = song.title || title;
+        }
+
+        // ================= FALLBACK (lyrics.ovh) =================
         if (!lyrics) {
             try {
-                const res = await fetch(
-                    `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=10`
+                const res = await axios.get(
+                    `https://api.lyrics.ovh/v1/${encodeURIComponent(artist || "")}/${encodeURIComponent(title)}`
                 );
-                const data = await res.json();
 
-                if (data.results?.length) {
-                    for (const item of data.results) {
-                        const a = item.artistName;
-                        const t = item.trackName;
-
-                        lyrics = await getLyrics(a, t);
-
-                        if (lyrics) {
-                            artist = a;
-                            title = t;
-                            break;
-                        }
-                    }
-                }
+                lyrics = res.data?.lyrics || null;
             } catch {}
         }
 
@@ -433,13 +476,13 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
             .trim();
 
         const header =
-`🎶 *LIRIK DITEMUKAN*
+`🎶 *LIRIK DITEMUKAN (GENIUS)*
 
 🎵 ${title || "-"}
 👤 ${artist || "-"}
 ━━━━━━━━━━━━━━━━━━\n`;
 
-        // ================= CHUNK SAFETY =================
+        // ================= CHUNK =================
         const max = 3800;
         let parts = [];
 
@@ -467,6 +510,7 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
         react: { text: success ? "🔥" : "❌", key: msg.key }
     });
 }
+
 /* ============================================================
    ==================  DOWNLOAD APK  ==========================
    ============================================================*/
