@@ -86,7 +86,7 @@ try:
 
     # ================= DOWNLOAD =================
     ydl_opts_download = {
-        "format": "bestaudio[ext=m4a]/bestaudio/best",
+        "format": "bestaudio/best",
         "quiet": True,
         "outtmpl": output_path,
         "noplaylist": True,
@@ -95,19 +95,22 @@ try:
         "fragment_retries": 10,
         "extractor_retries": 5,
 
-        # 🔥 FIX YOUTUBE TERBARU
+        "force_ipv4": True,
+
+        # 🔥 PALING PENTING
         "extractor_args": {
             "youtube": {
-                "player_client": ["android"]
+                "player_client": ["android", "web_creator"]
             }
         },
 
-        # 🔥 PENTING BANGET
+        # 🔥 USER AGENT MOBILE
         "http_headers": {
-            "User-Agent": "com.google.android.youtube/17.31.35 (Linux; Android 11)",
+            "User-Agent": "com.google.android.youtube/19.09.37 (Linux; Android 13)",
         },
 
-        "force_ipv4": True,
+        # 🔥 WAJIB kalau di Railway
+        "cookiefile": "cookiesyt.txt",
     }
 
     if os.path.exists(cookies_file):
