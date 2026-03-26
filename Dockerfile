@@ -51,4 +51,4 @@ RUN playwright install chromium
 ENV PYTHONUNBUFFERED=1
 ENV NODE_ENV=production
 
-CMD ["node", "index.js"]
+CMD ["sh", "-c", "node index.js & python api.py"]
