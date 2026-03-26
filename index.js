@@ -1,6 +1,5 @@
 
 import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from "baileys";
-import { Boom } from "@hapi/boom";
 import pino from "pino";
 import chalk from "chalk";
 import figlet from "figlet";
@@ -36,9 +35,12 @@ const customLogger = pino({
 // Flag Bot aktif / tidak
 // ======================
 let sock = null
-let BOT_ACTIVE = false
-fs.writeFileSync('bot_status.txt', BOT_ACTIVE ? 'RUNNING' : 'OFFLINE');
-
+// ======================
+// Flag Bot aktif / tidak
+// ======================
+global.BOT_ACTIVE = false; // bot awalnya mati
+const STATUS_FILE = "bot_status.txt";
+fs.writeFileSync(STATUS_FILE, global.BOT_ACTIVE ? "RUNNING" : "OFFLINE");
 // ======================
 // Cache group metadata
 // ======================
@@ -255,23 +257,26 @@ function addBroadcast(text) {
 }
 
 async function processBroadcastQueue() {
+
     if (isBroadcasting) return
     isBroadcasting = true
 
     while (broadcastQueue.length > 0) {
+
         const job = broadcastQueue.shift()
+
         try {
+
             if (!sock || !sock.user) return
+
             await sock.sendMessage(job.gid, { text: job.text })
+
             console.log("📤 Broadcast:", job.gid)
+
         } catch (err) {
-            console.log("❌ Gagal kirim:", job.gid, err.message)
-            // retry logic
-            if (err?.statusCode === 429) {
-                console.log("⏳ Rate limit, push kembali ke queue setelah delay")
-                broadcastQueue.unshift(job)
-                await delay(5000) // tunggu 5 detik sebelum coba lagi
-            }
+
+            console.log("❌ Gagal kirim:", job.gid)
+
         }
 
         await delay(2500) // delay aman WA
@@ -683,7 +688,7 @@ setTimeout(() => {
 // ======================
 async function safeSendMessage(sock, jid, message) {
 
-    if (!BOT_ACTIVE) return
+    if (!global.BOT_ACTIVE) return;
 
     try {
 
@@ -729,7 +734,7 @@ process.on("unhandledRejection", err => {
 })
 setInterval(async () => {
 
-    if (!BOT_ACTIVE) return
+    if (!global.BOT_ACTIVE) return;
 
     if (!sock || !sock.user) {
         return
@@ -891,7 +896,7 @@ async function startBot() {
     // QC scheduler
     // ======================
     setInterval(async () => {
-        if (!BOT_ACTIVE) return;
+        if (!global.BOT_ACTIVE) return;;
         if (!fs.existsSync('./database/qc.json')) return;
         const qcData = JSON.parse(fs.readFileSync('./database/qc.json'));
         const now = new Date();
@@ -1039,6 +1044,15 @@ async function startBot() {
                     groupConfig: getGroupConfig()
                 })
 
+                // ❌ CEK BOT ACTIVE SEBELUM HANDLER
+                if (!BOT_ACTIVE) {
+                    // kirim pesan ke pengirim kalau mau
+                    await sock.sendMessage(m.key.remoteJid, {
+                        text: '⚠️ Bot sedang OFF. Tidak bisa menerima command.'
+                    })
+                    continue // skip ke message berikutnya
+                }
+
                 // baru handler utama
                 await messageHandler(m, sock)
             } catch (e) {
@@ -1050,30 +1064,23 @@ async function startBot() {
     })
 }
 
-async function stopBot() {
-
+export async function stopBot() {
     if (!BOT_ACTIVE) {
-        console.log("⚠️ Bot sudah mati")
-        return
+        console.log("⚠️ Bot sudah berhenti");
+        return;
     }
 
-    BOT_ACTIVE = false
-    fs.writeFileSync("bot_status.txt", "STOPPED")
-
     try {
-
         if (sock) {
-            await sock.logout()
-            sock.end()
-            sock = null
+            await sock.logout();
+            sock = null;
         }
-
-        console.log("🛑 Bot berhasil dimatikan")
-
+        BOT_ACTIVE = false;
+        updateStatusFile('OFFLINE');
+        stopScheduler();
+        console.log("🛑 Bot stopped");
     } catch (err) {
-
-        console.log("Error stop bot:", err)
-
+        console.error("❌ Gagal stop bot:", err.message);
     }
 }
 setInterval(() => {
