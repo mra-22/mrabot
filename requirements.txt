@@ -2,3 +2,5 @@ yt-dlp
 requests
 playwright
 beautifulsoup4
+Flask
+flask-cors
