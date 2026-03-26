@@ -104,14 +104,19 @@ def extract_tiktok_slideshow_photos(url):
         browser = p.chromium.launch(
             headless=True,
             args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
                 "--disable-blink-features=AutomationControlled",
-                "--no-sandbox"
+                "--disable-gpu"
             ]
         )
-
         context = browser.new_context(
             user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X)",
-            viewport={"width": 390, "height": 844}
+            viewport={"width": 390, "height": 844},
+            device_scale_factor=2,
+            is_mobile=True,
+            has_touch=True
         )
 
         page = context.new_page()
@@ -127,10 +132,10 @@ def extract_tiktok_slideshow_photos(url):
                     raise Exception("Gagal load TikTok (timeout 3x)")
                 time.sleep(2)
 
-        time.sleep(5)
+        time.sleep(3)
 
         # scroll biar semua ke-load
-        for _ in range(8):
+        for _ in range(5):
             page.mouse.wheel(0, 4000)
             time.sleep(1)
 
