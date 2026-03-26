@@ -236,131 +236,75 @@ export async function play(sock, msg, from, sender, cmd, args) {
 
     if (!query) {
         return sock.sendMessage(from, {
-            text: `╭──📥 DOWNLOADER ──⬣
-│❗ Masukkan judul lagu.
-│📌 Contoh: *.play alan walker faded*
-╰⬣`,
-        }, { quoted: msg });
-    }
-
-    const userDB = JSON.parse(fs.readFileSync("./database/user.json", "utf-8"));
-    const rawId = getSenderRawId(msg);
-    const userKey = resolveToMainId(rawId);
-    const user = userDB?.[String(userKey)] ?? null;
-
-    if (!user) {
-        return sock.sendMessage(from, {
-            text: `╭──🎵 PLAY ──⬣
-│🚫 Kamu belum terdaftar.
-│✅ Gunakan *!daftar*
-╰⬣`,
-        }, { quoted: msg });
-    }
-
-    if (typeof user.Vidlimit !== "number") user.Vidlimit = 0;
-
-    if (user.Vidlimit <= 0) {
-        return sock.sendMessage(from, {
-            text: `╭──🎵 PLAY ──⬣
-│🚫 Limit habis
-│🎁 *!lmclaim*
-╰⬣`,
+            text: "❗ Masukkan judul lagu"
         }, { quoted: msg });
     }
 
     await sock.sendMessage(from, { react: { text: "⏳", key: msg.key } });
-    await sock.sendMessage(from, {
-        text: `🔍 Mencari *${query}*...`
-    }, { quoted: msg });
 
     let success = false;
     let videoUrl = null;
 
-    // ======================
-    // 🔥 1. TRY PYTHON (yt-dlp)
-    // ======================
     try {
-        const { stdout, stderr } = await execPromise(
+        const { stdout } = await execPromise(
             `python3 ./moduls/downloader_lagu.py "${query}"`
         );
 
-        if (stderr) console.log(stderr);
-        console.log("STDOUT:", stdout);
+        console.log(stdout);
 
         const mp3Match = stdout.match(/::SUCCESS::(.+)/);
         const titleMatch = stdout.match(/::TITLE::(.+)/);
         const urlMatch = stdout.match(/::URL::(.+)/);
+        const thumbMatch = stdout.match(/::THUMB::(.+)/);
+        const uploaderMatch = stdout.match(/::UPLOADER::(.+)/);
+        const durationMatch = stdout.match(/::DURATION::(.+)/);
 
+        const title = titleMatch ? titleMatch[1].trim() : query;
         videoUrl = urlMatch ? urlMatch[1].trim() : null;
+        const thumbnail = thumbMatch ? thumbMatch[1].trim() : null;
+        const uploader = uploaderMatch ? uploaderMatch[1].trim() : "-";
+        const duration = durationMatch ? parseInt(durationMatch[1]) : 0;
 
-        if (mp3Match) {
-            const mp3Path = mp3Match[1].trim();
-            const title = titleMatch ? titleMatch[1].trim() : query;
+        // 🎨 CAPTION
+        const caption = `╭━━━〔 🎵 PLAY MUSIC 〕━━━⬣
+┃ 🎧 Judul   : ${title}
+┃ 📺 Channel : ${uploader}
+┃ ⏱️ Durasi  : ${formatDuration(duration)}
+╰━━━━━━━━━━━━━━━━⬣`;
 
-            if (!fs.existsSync(mp3Path)) {
-                throw new Error("File MP3 tidak ditemukan");
-            }
-
-            const buffer = fs.readFileSync(mp3Path);
-
+        // 📸 KIRIM THUMBNAIL
+        if (thumbnail) {
             await sock.sendMessage(from, {
-                audio: buffer,
-                mimetype: "audio/mpeg",
-                fileName: `${title}.mp3`
+                image: { url: thumbnail },
+                caption
             }, { quoted: msg });
+        } else {
+            await sock.sendMessage(from, { text: caption }, { quoted: msg });
+        }
 
-            fs.unlinkSync(mp3Path);
-            success = true;
+        // 🎧 KIRIM AUDIO JIKA ADA
+        if (mp3Match) {
+            const path = mp3Match[1].trim();
+
+            if (fs.existsSync(path)) {
+                const buffer = fs.readFileSync(path);
+
+                await sock.sendMessage(from, {
+                    audio: buffer,
+                    mimetype: "audio/mpeg",
+                    fileName: `${title}.mp3`
+                }, { quoted: msg });
+
+                fs.unlinkSync(path);
+                success = true;
+            }
         }
 
     } catch (e) {
-        console.log("❌ yt-dlp gagal → fallback");
+        console.log("❌ yt-dlp gagal");
     }
 
-    // ======================
-    // 🔥 2. AUTO SEARCH URL (kalau null)
-    // ======================
-    if (!videoUrl) {
-        try {
-            const res = await fetch(
-                `https://ytsearch.vercel.app/api?query=${encodeURIComponent(query)}`
-            );
-            const data = await res.json();
-
-            if (data.result && data.result.length > 0) {
-                videoUrl = data.result[0].url;
-                console.log("✅ URL dari search:", videoUrl);
-            }
-        } catch (e) {
-            console.log("❌ gagal ambil URL dari search API");
-        }
-    }
-
-    // ======================
-    // 🔥 3. FALLBACK API 1
-    // ======================
-    if (!success && videoUrl) {
-        try {
-            const res = await fetch(
-                `https://api.vevioz.com/api/button/mp3/${encodeURIComponent(videoUrl)}`
-            );
-
-            const html = await res.text();
-
-            await sock.sendMessage(from, {
-                text: `⚠️ yt-dlp gagal.\nDownload di sini:\n${html}`
-            }, { quoted: msg });
-
-            success = true;
-
-        } catch (e) {
-            console.log("❌ fallback 1 gagal");
-        }
-    }
-
-    // ======================
-    // 🔥 4. FALLBACK API 2
-    // ======================
+    // 🔥 FALLBACK AUDIO
     if (!success && videoUrl) {
         try {
             const res = await fetch(
@@ -377,42 +321,20 @@ export async function play(sock, msg, from, sender, cmd, args) {
 
                 success = true;
             }
-
         } catch (e) {
-            console.log("❌ fallback 2 gagal");
+            console.log("❌ fallback gagal");
         }
     }
 
-    // ======================
-    // 🔥 5. LAST FALLBACK (kirim URL)
-    // ======================
     if (!success && videoUrl) {
         await sock.sendMessage(from, {
-            text: `🎧 Tidak bisa kirim audio.\nGunakan link ini:\n${videoUrl}`
-        }, { quoted: msg });
-
-        success = true;
-    }
-
-    // ======================
-    // ❌ FINAL FAIL
-    // ======================
-    if (!success) {
-        await sock.sendMessage(from, { react: { text: "❌", key: msg.key } });
-
-        return sock.sendMessage(from, {
-            text: "❌ Semua metode gagal. Coba lagi nanti."
+            text: `🎧 Tidak bisa kirim audio.\n${videoUrl}`
         }, { quoted: msg });
     }
 
-    // ======================
-    // ✅ SUCCESS
-    // ======================
-    await sock.sendMessage(from, { react: { text: "✅", key: msg.key } });
-
-    user.Vidlimit -= 1;
-    userDB[userKey] = user;
-    fs.writeFileSync("./database/user.json", JSON.stringify(userDB, null, 2));
+    await sock.sendMessage(from, {
+        react: { text: success ? "✅" : "❌", key: msg.key }
+    });
 }
 /* ============================================================
    ==================  DOWNLOAD APK  ==========================
