@@ -1,6 +1,5 @@
 import sys
 import os
-import re
 import json
 import subprocess
 import requests
@@ -9,7 +8,7 @@ from playwright.sync_api import sync_playwright
 
 OUTPUT_DIR = "videos"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
-print("COOKIES ADA:", os.path.exists("/app/ig_cookies"))
+
 # =============================
 # LOGGER
 # =============================
@@ -19,7 +18,7 @@ class QuietLogger:
     def error(self, msg): print(msg, file=sys.stderr)
 
 # =============================
-# DEBUG (WAJIB CEK)
+# DEBUG
 # =============================
 print("PATH:", os.getcwd())
 print("COOKIES ADA:", os.path.exists("/app/ig_cookies"))
@@ -35,20 +34,30 @@ def expand_url(url):
         return url
 
 # =============================
-# CONVERT VIDEO (WA READY)
+# 🔥 CONVERT WA (FIX TOTAL)
 # =============================
 def convert_to_whatsapp_mp4(path):
     output = os.path.splitext(path)[0] + "_wa.mp4"
 
     subprocess.run([
-        "ffmpeg","-y","-i",path,
-        "-vf","scale=480:-2",
-        "-c:v","libx264",
-        "-preset","fast",
-        "-crf","28",
-        "-c:a","aac",
-        "-b:a","128k",
-        "-movflags","+faststart",
+        "ffmpeg",
+        "-y",
+        "-i", path,
+
+        # 🔥 WA COMPATIBLE
+        "-c:v", "libx264",
+        "-profile:v", "baseline",
+        "-level", "3.0",
+        "-pix_fmt", "yuv420p",
+
+        "-vf", "scale=480:-2",
+        "-r", "30",
+
+        "-c:a", "aac",
+        "-b:a", "128k",
+
+        "-movflags", "+faststart",
+
         output
     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -75,7 +84,7 @@ def tiktok_slideshow(url):
         )
 
         context = browser.new_context(
-            user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X)",
+            user_agent="Mozilla/5.0 (iPhone)",
             viewport={"width":390,"height":844},
             is_mobile=True,
             has_touch=True
@@ -119,20 +128,24 @@ def tiktok_slideshow(url):
     return True
 
 # =============================
-# INSTAGRAM FALLBACK (JSON FIX)
+# INSTAGRAM FALLBACK JSON
 # =============================
 def instagram_fallback(url):
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
-
         api = url.split("?")[0] + "?__a=1&__d=dis"
+
         r = requests.get(api, headers=headers, timeout=15)
+
+        if not r.text.strip().startswith("{"):
+            raise Exception("IG BLOCK / BUKAN JSON")
+
         data = r.json()
 
         video_url = data["items"][0]["video_versions"][0]["url"]
 
         fn = os.path.join(OUTPUT_DIR, "instagram.mp4")
-        vid = requests.get(video_url, timeout=20).content
+        vid = requests.get(video_url).content
 
         with open(fn, "wb") as f:
             f.write(vid)
@@ -149,7 +162,7 @@ def instagram_fallback(url):
         return False
 
 # =============================
-# INSTAGRAM BACKUP API
+# INSTAGRAM API BACKUP
 # =============================
 def ig_api_backup(url):
     try:
@@ -158,7 +171,7 @@ def ig_api_backup(url):
 
         if res.get("video"):
             fn = os.path.join(OUTPUT_DIR, "ig_api.mp4")
-            vid = requests.get(res["video"], timeout=20).content
+            vid = requests.get(res["video"]).content
 
             with open(fn, "wb") as f:
                 f.write(vid)
@@ -173,7 +186,7 @@ def ig_api_backup(url):
         return False
 
 # =============================
-# YTDLP DOWNLOAD (UTAMA)
+# YTDLP DOWNLOAD
 # =============================
 def download_video(url):
     try:
@@ -197,7 +210,17 @@ def download_video(url):
                     "api_version": "v1",
                     "include_dash_manifest": False
                 }
-            }
+            },
+
+            # 🔥 BIAR FORMAT MP4
+            "postprocessors": [{
+                "key": "FFmpegVideoConvertor",
+                "preferedformat": "mp4"
+            }],
+
+            # 🔥 ANTI RATE LIMIT
+            "sleep_interval": 2,
+            "max_sleep_interval": 5
         }
 
         with YoutubeDL(opts) as ydl:
@@ -245,7 +268,7 @@ if __name__ == "__main__":
         if instagram_fallback(url):
             sys.exit(0)
 
-    # 3. IG backup API
+    # 3. IG API backup
     if "instagram.com" in url:
         if ig_api_backup(url):
             sys.exit(0)
