@@ -220,7 +220,7 @@ export function startDashboardBridge(sock, ownerNumber) {
                     console.log("⚠️ Bot dihentikan via dashboard (hanya otomatis dimatikan)")
 
                     // 1️⃣ Flag 
-                    globaglobal.BOT_ACTIVE = false; 
+                    global.BOT_ACTIVE = false; 
                     broadcasting = false; // hentikan proses broadcast jika ada
                     stopBroadcast = true; // hentikan queue broadcast
                     isBroadcasting = false;
