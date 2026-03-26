@@ -1,144 +1,75 @@
 import sys
 import os
 import re
-import subprocess
 import json
 from yt_dlp import YoutubeDL
 
+# ======================
+# Ambil query
+# ======================
 if len(sys.argv) < 2:
-    print("[DOWNLOAD ERROR] Judul lagu tidak diberikan", file=sys.stderr)
+    print("::ERROR::Query kosong")
     sys.exit(1)
 
 query = " ".join(sys.argv[1:])
-search_keyword = f"ytsearch5:{query}"
+search = f"ytsearch1:{query}"
 
-# ✅ Railway-friendly directory
+# ======================
+# Folder output (Railway aman)
+# ======================
 output_dir = "/tmp/audios"
 os.makedirs(output_dir, exist_ok=True)
-
 
 def sanitize_filename(name):
     return re.sub(r"[^a-zA-Z0-9]", "_", name).strip("_").lower()
 
-
-def convert_to_mp3(input_path):
-    output_path = os.path.splitext(input_path)[0] + ".mp3"
-
-    try:
-        subprocess.run(
-            [
-                "ffmpeg",
-                "-y",
-                "-i",
-                input_path,
-                "-vn",
-                "-acodec",
-                "libmp3lame",
-                "-b:a",
-                "128k",
-                output_path,
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=True,
-        )
-
-        if os.path.exists(output_path):
-            os.remove(input_path)
-            return output_path
-
-    except Exception as e:
-        print(f"[FFMPEG ERROR] {e}", file=sys.stderr)
-
-    return None
-
-
 try:
-    cookies_file = "cookiesyt.txt"
-
-    # ================= SEARCH =================
-    ydl_opts_info = {
+    ydl_opts = {
         "quiet": True,
-        "skip_download": True,
-        "noplaylist": True,
-        "default_search": "ytsearch",
-        "http_headers": {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-            "Accept-Language": "en-US,en;q=0.9",
-        },
-    }
-
-    if os.path.exists(cookies_file):
-        ydl_opts_info["cookiefile"] = cookies_file
-
-    with YoutubeDL(ydl_opts_info) as ydl:
-        search_result = ydl.extract_info(search_keyword, download=False)
-
-        entries = search_result.get("entries", [])
-        if not entries:
-            raise Exception("Tidak ada video ditemukan")
-
-        video_info = entries[0]
-        video_url = video_info["webpage_url"]
-
-        title = sanitize_filename(video_info.get("title", "audio"))
-        output_path = os.path.join(output_dir, f"{title}.mp4")
-
-    # ================= DOWNLOAD =================
-    ydl_opts_download = {
         "format": "bestaudio/best",
-        "quiet": True,
-        "outtmpl": output_path,
+        "outtmpl": f"{output_dir}/%(title)s.%(ext)s",
         "noplaylist": True,
 
-        "retries": 10,
-        "fragment_retries": 10,
-        "extractor_retries": 5,
-
-        "force_ipv4": True,
-
-        # 🔥 PALING PENTING
+        # 🔥 ANTI BLOCK
         "extractor_args": {
             "youtube": {
                 "player_client": ["android", "web_creator"]
             }
         },
 
-        # 🔥 USER AGENT MOBILE
         "http_headers": {
-            "User-Agent": "com.google.android.youtube/19.09.37 (Linux; Android 13)",
+            "User-Agent": "com.google.android.youtube/19.09.37"
         },
 
-        # 🔥 WAJIB kalau di Railway
-        "cookiefile": "cookiesyt.txt",
+        "retries": 5,
+        "fragment_retries": 5,
     }
 
-    if os.path.exists(cookies_file):
-        ydl_opts_download["cookiefile"] = cookies_file
+    with YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(search, download=True)
 
-    with YoutubeDL(ydl_opts_download) as ydl2:
-        ydl2.download([video_url])
+        if "entries" in info:
+            video = info["entries"][0]
+        else:
+            video = info
 
-    if not os.path.exists(output_path):
-        raise Exception("File video tidak ditemukan setelah download")
+        filepath = ydl.prepare_filename(video)
 
-    # ================= CONVERT =================
-    mp3_path = convert_to_mp3(output_path)
+        # Rename biar pasti mp3
+        base, ext = os.path.splitext(filepath)
+        mp3_path = base + ".mp3"
 
-    if not mp3_path or not os.path.exists(mp3_path):
-        raise Exception("Gagal konversi ke MP3")
+        # Convert pakai ffmpeg
+        os.system(f'ffmpeg -y -i "{filepath}" -vn -acodec libmp3lame -b:a 128k "{mp3_path}" > /dev/null 2>&1')
 
-    # ================= OUTPUT =================
-    info = {
-        "title": video_info.get("title", "-"),
-        "uploader": video_info.get("uploader", "-"),
-        "duration": video_info.get("duration", 0),
-        "thumbnail": video_info.get("thumbnail", "")
-    }
+        if os.path.exists(mp3_path):
+            os.remove(filepath)
 
-    print(f"::MP3::{mp3_path}", flush=True)
-    print(f"::INFO::{json.dumps(info)}", flush=True)
+            print(f"::SUCCESS::{mp3_path}", flush=True)
+            print(f"::TITLE::{video.get('title','-')}", flush=True)
+        else:
+            raise Exception("Convert gagal")
 
 except Exception as e:
-    print(f"[DOWNLOAD ERROR] {e}", file=sys.stderr)
+    print(f"::ERROR::{str(e)}", flush=True)
     sys.exit(1)
