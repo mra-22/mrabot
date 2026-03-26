@@ -349,6 +349,8 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
 
     const rawQuery = args.join(" ").trim();
 
+    console.log("[LIRIK] RAW QUERY:", rawQuery);
+
     if (!rawQuery) {
         return sock.sendMessage(from, {
             text: "❗ Contoh:\n*!lirik noah separuh aku*\n*!lirik eminem mockingbird*"
@@ -362,11 +364,18 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
     let success = false;
 
     try {
-        // ================= CLEAN QUERY =================
-        let query = rawQuery
-            .replace(/official|lyrics|lirik|video|audio/gi, "")
-            .replace(/\s+/g, " ")
-            .trim();
+        // ================= NORMALIZE =================
+        function normalize(q) {
+            return q
+                .toLowerCase()
+                .replace(/noah|official|lyrics|lirik|video|audio/g, "")
+                .replace(/\s+/g, " ")
+                .trim();
+        }
+
+        let query = normalize(rawQuery);
+
+        console.log("[LIRIK] NORMALIZED QUERY:", query);
 
         let artist = "";
         let title = "";
@@ -377,25 +386,43 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
             title = query;
         }
 
+        console.log("[LIRIK] ARTIST:", artist);
+        console.log("[LIRIK] TITLE:", title);
+
         // ================= GENIUS SEARCH =================
         async function searchGenius(q) {
             try {
+                console.log("[GENIUS] SEARCH:", q);
+
                 const { data } = await axios.get(
-                    `https://genius.com/api/search/multi?q=${encodeURIComponent(q)}`,
-                    {
-                        headers: {
-                            "User-Agent":
-                                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
-                        }
-                    }
+                    `https://genius.com/api/search/multi?q=${encodeURIComponent(q)}`
                 );
 
                 const sections = data?.response?.sections || [];
 
+                const songSection = sections.find(s => s.type === "song");
+                const hits = songSection?.hits || [];
+
+                for (const hit of hits) {
+                    const r = hit?.result;
+                    if (r?.url) {
+                        console.log("[GENIUS] FOUND:", r.title);
+
+                        return {
+                            url: r.url,
+                            title: r.title,
+                            artist: r.primary_artist?.name || ""
+                        };
+                    }
+                }
+
+                // fallback all sections
                 for (const sec of sections) {
                     for (const hit of sec?.hits || []) {
                         const r = hit?.result;
-                        if (r?.url && r?.title) {
+                        if (r?.url) {
+                            console.log("[GENIUS] FALLBACK FOUND:", r.title);
+
                             return {
                                 url: r.url,
                                 title: r.title,
@@ -406,20 +433,19 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
                 }
 
                 return null;
-            } catch {
+
+            } catch (err) {
+                console.log("[GENIUS ERROR]:", err.message);
                 return null;
             }
         }
 
         // ================= SCRAPE LYRICS =================
-        async function getLyricsFromGenius(url) {
+        async function getLyrics(url) {
             try {
-                const { data } = await axios.get(url, {
-                    headers: {
-                        "User-Agent":
-                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
-                    }
-                });
+                console.log("[SCRAPE] URL:", url);
+
+                const { data } = await axios.get(url);
 
                 const $ = cheerio.load(data);
 
@@ -430,38 +456,61 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
                 });
 
                 return lyrics.trim() || null;
-            } catch {
+
+            } catch (err) {
+                console.log("[SCRAPE ERROR]:", err.message);
                 return null;
             }
         }
 
         // ================= MAIN FLOW =================
-        let song = await searchGenius(`${artist} ${title}`) ||
-                   await searchGenius(title);
+        let song =
+            await searchGenius(`${artist} ${title}`) ||
+            await searchGenius(title) ||
+            await searchGenius(rawQuery);
+
+        console.log("[SONG RESULT]:", song);
 
         let lyrics = null;
 
         if (song?.url) {
-            lyrics = await getLyricsFromGenius(song.url);
+            lyrics = await getLyrics(song.url);
             artist = song.artist || artist;
             title = song.title || title;
         }
 
-        // ================= FALLBACK (lyrics.ovh) =================
+        // ================= FALLBACK LYRICS.OVH =================
         if (!lyrics) {
             try {
+                console.log("[FALLBACK] lyrics.ovh");
+
                 const res = await axios.get(
                     `https://api.lyrics.ovh/v1/${encodeURIComponent(artist || "")}/${encodeURIComponent(title)}`
                 );
 
                 lyrics = res.data?.lyrics || null;
-            } catch {}
+
+            } catch (err) {
+                console.log("[LYRICS.OVH ERROR]:", err.message);
+            }
         }
 
         // ================= FAIL =================
         if (!lyrics) {
+            console.log("[FAILED] NO LYRICS FOUND");
+
             await sock.sendMessage(from, {
-                text: "❌ Lirik tidak ditemukan\n💡 Coba ketik lebih lengkap (contoh: noah separuh aku)"
+                text:
+`❌ Lirik tidak ditemukan
+
+🔎 Debug Info:
+- Query: ${rawQuery}
+- Normalized: ${query}
+- Artist: ${artist}
+- Title: ${title}
+
+💡 Coba:
+*!lirik separuh aku noah*`
             }, { quoted: msg });
 
             return sock.sendMessage(from, {
@@ -476,7 +525,7 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
             .trim();
 
         const header =
-`🎶 *LIRIK DITEMUKAN (GENIUS)*
+`🎶 *LIRIK DITEMUKAN*
 
 🎵 ${title || "-"}
 👤 ${artist || "-"}
@@ -498,11 +547,13 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
 
         success = true;
 
+        console.log("[SUCCESS] LYRICS SENT");
+
     } catch (err) {
-        console.log("LIRIK ERROR:", err);
+        console.log("[GLOBAL ERROR]:", err);
 
         await sock.sendMessage(from, {
-            text: "❌ Error saat mengambil lirik"
+            text: "❌ Error saat mengambil lirik (cek logs Railway)"
         }, { quoted: msg });
     }
 
