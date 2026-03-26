@@ -30,7 +30,6 @@ const customLogger = pino({
         options: { ignore: 'pid,hostname', colorize: true }
     }
 });
-bot
 // ======================
 // Flag Bot aktif / tidak
 // ======================
