@@ -269,24 +269,38 @@ export async function play(sock, msg, from, sender, cmd, args) {
     }
 
     await sock.sendMessage(from, { react: { text: "⏳", key: msg.key } });
-    await sock.sendMessage(from, { text: `🔍 Mencari *${query}*...` }, { quoted: msg });
+    await sock.sendMessage(from, {
+        text: `🔍 Mencari *${query}*...`
+    }, { quoted: msg });
 
     let success = false;
+    let videoUrl = null;
 
     // ======================
     // 🔥 1. TRY PYTHON (yt-dlp)
     // ======================
     try {
-        const { stdout } = await execPromise(
-            `${pythonCmd} ./moduls/downloader_lagu.py "${query}"`
+        const { stdout, stderr } = await execPromise(
+            `python3 ./moduls/downloader_lagu.py "${query}"`
         );
+
+        if (stderr) console.log(stderr);
+
+        console.log("STDOUT:", stdout);
 
         const mp3Match = stdout.match(/::SUCCESS::(.+)/);
         const titleMatch = stdout.match(/::TITLE::(.+)/);
+        const urlMatch = stdout.match(/::URL::(.+)/);
+
+        videoUrl = urlMatch ? urlMatch[1].trim() : null;
 
         if (mp3Match) {
             const mp3Path = mp3Match[1].trim();
             const title = titleMatch ? titleMatch[1].trim() : query;
+
+            if (!fs.existsSync(mp3Path)) {
+                throw new Error("File MP3 tidak ditemukan");
+            }
 
             const buffer = fs.readFileSync(mp3Path);
 
@@ -307,38 +321,47 @@ export async function play(sock, msg, from, sender, cmd, args) {
     // ======================
     // 🔥 2. FALLBACK API 1
     // ======================
-   if (!success && videoUrl) {
+    if (!success && videoUrl) {
         try {
-            const res = await fetch(`https://api.vevioz.com/api/button/mp3/${encodeURIComponent(videoUrl)}`);
+            const res = await fetch(
+                `https://api.vevioz.com/api/button/mp3/${encodeURIComponent(videoUrl)}`
+            );
+
             const html = await res.text();
-    
+
             await sock.sendMessage(from, {
                 text: `⚠️ yt-dlp gagal.\nDownload di sini:\n${html}`
-            });
-    
+            }, { quoted: msg });
+
             success = true;
+
         } catch (e) {
-             console.log("fallback 1 gagal");
+            console.log("❌ fallback 1 gagal");
         }
     }
+
     // ======================
     // 🔥 3. FALLBACK API 2
     // ======================
-   if (!success && videoUrl) {
+    if (!success && videoUrl) {
         try {
-            const res = await fetch(`https://ytdl-api.caliphdev.com/download/audio?url=${encodeURIComponent(videoUrl)}`);
+            const res = await fetch(
+                `https://ytdl-api.caliphdev.com/download/audio?url=${encodeURIComponent(videoUrl)}`
+            );
+
             const json = await res.json();
-    
+
             if (json.result?.download_url) {
                 await sock.sendMessage(from, {
                     audio: { url: json.result.download_url },
                     mimetype: "audio/mpeg"
-                });
-    
+                }, { quoted: msg });
+
                 success = true;
             }
+
         } catch (e) {
-            console.log("fallback 2 gagal");
+            console.log("❌ fallback 2 gagal");
         }
     }
 
