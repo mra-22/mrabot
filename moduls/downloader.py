@@ -159,7 +159,7 @@ def download_video(url):
             "logger":QuietLogger(),
 
             # 🔥 COOKIES IG
-            "cookiefile":"/app/cookies.txt",
+            "cookiefile":"ig_cookies.txt",
 
             "http_headers":{
                 "User-Agent":"Mozilla/5.0"
