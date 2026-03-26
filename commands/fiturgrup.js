@@ -23,6 +23,19 @@ const badwords = [
     'followers'
 ];
 
+const CHAT_COUNT_PATH = './database/chatcount.json';
+
+function loadChatCount() {
+    if (!fs.existsSync(CHAT_COUNT_PATH)) return {};
+    return JSON.parse(fs.readFileSync(CHAT_COUNT_PATH));
+}
+
+function saveChatCount(data) {
+    fs.writeFileSync(CHAT_COUNT_PATH, JSON.stringify(data, null, 2));
+}
+
+let chatCount = loadChatCount();
+
 const TAG_LIMIT_PATH = './database/taglimit.json';
 const TAG_LIMIT_MAX = 5;
 
@@ -113,7 +126,15 @@ export async function handleGroupFeatures({
     const isAdmin = metadata?.participants?.find(p => p.id === sender)?.admin;
     const isGroup = from.endsWith('@g.us');
     const groupMetadata = metadata;
+    // ===== HITUNG PESAN MEMBER =====
+    if (isGroup) {
+        const senderId = sender;
 
+        chatCount[from] = chatCount[from] || {};
+        chatCount[from][senderId] = (chatCount[from][senderId] || 0) + 1;
+
+        saveChatCount(chatCount);
+    }
 
     if (!groupConfig[from]) {
         groupConfig[from] = {
@@ -238,7 +259,7 @@ export async function handleGroupFeatures({
                 ])
             }, { quoted: msg });
         }
-    } 
+    }
 
     if (groupConfig[from]?.antilink) {
         const body = getBody(msg).trim().toLowerCase();
@@ -328,7 +349,51 @@ export async function handleGroupFeatures({
         }
     }
 
+    if (cmd === 'listpesan') {
+        if (!isGroup) return onlyGroup({ sock, from, msg });
 
+        const data = chatCount[from] || {};
+        const meta = await getGroupMetadataSafe(sock, from);
+
+        if (!meta) return;
+
+        const participants = meta.participants || [];
+
+        // Gabungkan data + nama
+        const result = participants.map(p => {
+            return {
+                id: p.id,
+                count: data[p.id] || 0
+            };
+        });
+
+        // Urutkan dari terbanyak
+        result.sort((a, b) => b.count - a.count);
+
+        const top = result.slice(0, 20); // top 20
+
+        const text = top.map((u, i) => {
+            return `┃ ${i + 1}. @${u.id.split('@')[0]}
+┃ 💬 ${u.count} pesan`;
+        }).join('\n┃───────────────\n');
+
+        return sock.sendMessage(from, {
+            text: `╭──📊 *TOP MEMBER PALING AKTIF* ──⬣
+${text}
+╰─────────────⬣`,
+            mentions: top.map(u => u.id)
+        }, { quoted: msg });
+    }
+    if (cmd === 'totalpesan') {
+        if (!isGroup) return onlyGroup({ sock, from, msg });
+
+        const data = chatCount[from] || {};
+        const total = Object.values(data).reduce((a, b) => a + b, 0);
+
+        return sock.sendMessage(from, {
+            text: `📊 Total semua pesan di grup ini: *${total} pesan*`
+        }, { quoted: msg });
+    }
     // ╭──🗑 DELETE
     if (['delete', 'del'].includes(cmd)) {
         if (!isAdmin) return onlyAdmin({ sock, from, msg });
