@@ -285,7 +285,6 @@ export async function play(sock, msg, from, sender, cmd, args) {
         );
 
         if (stderr) console.log(stderr);
-
         console.log("STDOUT:", stdout);
 
         const mp3Match = stdout.match(/::SUCCESS::(.+)/);
@@ -319,7 +318,26 @@ export async function play(sock, msg, from, sender, cmd, args) {
     }
 
     // ======================
-    // 🔥 2. FALLBACK API 1
+    // 🔥 2. AUTO SEARCH URL (kalau null)
+    // ======================
+    if (!videoUrl) {
+        try {
+            const res = await fetch(
+                `https://ytsearch.vercel.app/api?query=${encodeURIComponent(query)}`
+            );
+            const data = await res.json();
+
+            if (data.result && data.result.length > 0) {
+                videoUrl = data.result[0].url;
+                console.log("✅ URL dari search:", videoUrl);
+            }
+        } catch (e) {
+            console.log("❌ gagal ambil URL dari search API");
+        }
+    }
+
+    // ======================
+    // 🔥 3. FALLBACK API 1
     // ======================
     if (!success && videoUrl) {
         try {
@@ -341,7 +359,7 @@ export async function play(sock, msg, from, sender, cmd, args) {
     }
 
     // ======================
-    // 🔥 3. FALLBACK API 2
+    // 🔥 4. FALLBACK API 2
     // ======================
     if (!success && videoUrl) {
         try {
@@ -363,6 +381,17 @@ export async function play(sock, msg, from, sender, cmd, args) {
         } catch (e) {
             console.log("❌ fallback 2 gagal");
         }
+    }
+
+    // ======================
+    // 🔥 5. LAST FALLBACK (kirim URL)
+    // ======================
+    if (!success && videoUrl) {
+        await sock.sendMessage(from, {
+            text: `🎧 Tidak bisa kirim audio.\nGunakan link ini:\n${videoUrl}`
+        }, { quoted: msg });
+
+        success = true;
     }
 
     // ======================
