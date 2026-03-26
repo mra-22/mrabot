@@ -5,14 +5,32 @@ import os
 from datetime import datetime
 
 app = Flask(__name__)
-CORS(app)  # WAJIB biar Vercel bisa akses
 
-# FILE SYSTEM (sesuai bot kamu)
+# ✅ CORS FIX (biar Vercel bisa akses)
+CORS(app, resources={r"/*": {"origins": "*"}})
+
+@app.after_request
+def after_request(response):
+    response.headers.add("Access-Control-Allow-Origin", "*")
+    response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
+    response.headers.add("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+    return response
+
+
+# ================= FILE =================
 COMMAND_QUEUE = "command_queue.txt"
 STATS_FILE = "bot_stats.json"
 GROUP_FILE = "group_list.json"
 PROGRESS_FILE = "broadcast_progress.json"
 STATUS_FILE = "bot_status.txt"
+
+
+# ================= ROOT =================
+@app.route("/")
+def home():
+    return jsonify({
+        "message": "MR.A BOT API RUNNING 🚀"
+    })
 
 
 # ================= COMMAND =================
@@ -25,13 +43,12 @@ def send_command():
         if not cmd:
             return jsonify({"error": "No command"}), 400
 
-        # simpan command ke file (dibaca bot kamu)
         with open(COMMAND_QUEUE, "a") as f:
             f.write(cmd + "\n")
 
         print(f"[{datetime.now()}] COMMAND:", cmd)
 
-        return jsonify({"status": "ok", "cmd": cmd})
+        return jsonify({"status": "ok", "command": cmd})
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -75,14 +92,6 @@ def status():
             return jsonify({"status": f.read().strip()})
     except:
         return jsonify({"status": "STOPPED"})
-
-
-# ================= TEST ROUTE =================
-@app.route("/")
-def home():
-    return jsonify({
-        "message": "MR.A BOT API RUNNING 🚀"
-    })
 
 
 # ================= RUN =================
