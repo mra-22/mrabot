@@ -36,7 +36,7 @@ const customLogger = pino({
 // Flag Bot aktif / tidak
 // ======================
 let sock = null
-let BOT_ACTIVE = false
+let BOT_ACTIVE = true
 fs.writeFileSync('bot_status.txt', BOT_ACTIVE ? 'RUNNING' : 'OFFLINE');
 
 // ======================
@@ -767,7 +767,7 @@ setInterval(async () => {
 
     }
 
-}, 60000)
+}, 1000)
 const app = express();
 const PORT = process.env.PORT || 3000;
 
