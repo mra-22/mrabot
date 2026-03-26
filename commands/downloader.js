@@ -344,9 +344,9 @@ export async function play(sock, msg, from, sender, cmd, args) {
 export async function lirik(sock, msg, from, sender, cmd, args) {
     if (!Array.isArray(args)) args = [];
 
-    const query = args.join(" ").trim();
+    const rawQuery = args.join(" ").trim();
 
-    if (!query) {
+    if (!rawQuery) {
         return sock.sendMessage(from, {
             text: "❗ Masukkan judul lagu\nContoh: !lirik eminem mockinbird"
         }, { quoted: msg });
@@ -359,18 +359,26 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
     let success = false;
 
     try {
+        // =========================
+        // CLEAN INPUT (IMPORTANT FIX)
+        // =========================
+        let query = rawQuery
+            .replace(/official|lyrics|lirik|video|audio/gi, "")
+            .replace(/\s+/g, " ")
+            .trim();
+
         let artist = "";
         let title = "";
 
-        // =========================
-        // PARSE INPUT
-        // =========================
         if (query.includes("-")) {
             [artist, title] = query.split("-").map(v => v.trim());
         } else {
             title = query;
         }
 
+        // =========================
+        // LYRICS FETCHER
+        // =========================
         async function getLyrics(a, t) {
             try {
                 const res = await fetch(
@@ -383,28 +391,44 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
             }
         }
 
-        let lyrics = await getLyrics(artist, title);
+        let lyrics = null;
 
-        // swap fallback
+        // =========================
+        // 1. DIRECT TRY
+        // =========================
+        lyrics = await getLyrics(artist, title);
+
+        // =========================
+        // 2. SWAP TRY (FIX COMMON ERROR)
+        // =========================
         if (!lyrics) {
             lyrics = await getLyrics(title, artist);
         }
 
-        // itunes fallback
+        // =========================
+        // 3. ITUNES SMART FIX (MAIN UPGRADE)
+        // =========================
         if (!lyrics) {
             try {
                 const res = await fetch(
-                    `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&limit=1`
+                    `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&limit=3`
                 );
                 const data = await res.json();
 
                 if (data.results?.length) {
-                    const r = data.results[0];
+                    for (const item of data.results) {
+                        const a = item.artistName;
+                        const t = item.trackName;
 
-                    artist = r.artistName;
-                    title = r.trackName;
+                        const test = await getLyrics(a, t);
 
-                    lyrics = await getLyrics(artist, title);
+                        if (test) {
+                            artist = a;
+                            title = t;
+                            lyrics = test;
+                            break;
+                        }
+                    }
                 }
             } catch (e) {}
         }
@@ -414,7 +438,7 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
         // =========================
         if (!lyrics) {
             await sock.sendMessage(from, {
-                text: "❌ Lirik tidak ditemukan"
+                text: "❌ Lirik tidak ditemukan\n💡 Coba ketik lebih lengkap (contoh: artist - judul)"
             }, { quoted: msg });
 
             return sock.sendMessage(from, {
@@ -423,17 +447,22 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
         }
 
         // =========================
-        // CLEAN TEXT
+        // CLEAN OUTPUT
         // =========================
         lyrics = lyrics
             .replace(/\r/g, "")
             .replace(/\n{3,}/g, "\n\n")
             .trim();
 
-        const header = `🎶 *LIRIK LAGU*\n🎵 ${title}\n👤 ${artist || "-"}\n\n`;
+        const header =
+`🎶 *LIRIK PRO PLAY SYSTEM*
+
+🎵 ${title}
+👤 ${artist || "-"}
+━━━━━━━━━━━━━━━━━━\n`;
 
         // =========================
-        // CHUNK SAFE (WA LIMIT)
+        // SAFE CHUNK
         // =========================
         const max = 3800;
         let parts = [];
@@ -442,9 +471,6 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
             parts.push(lyrics.slice(i, i + max));
         }
 
-        // =========================
-        // SEND ALL PARTS
-        // =========================
         for (let i = 0; i < parts.length; i++) {
             await sock.sendMessage(from, {
                 text: i === 0 ? header + parts[i] : parts[i]
@@ -453,16 +479,16 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
 
         success = true;
 
-    } catch (e) {
-        console.log("❌ LIRIK ERROR:", e);
+    } catch (err) {
+        console.log("LIRIK PRO ERROR:", err);
 
         await sock.sendMessage(from, {
-            text: "❌ Terjadi kesalahan saat mengambil lirik"
+            text: "❌ Error saat mengambil lirik"
         }, { quoted: msg });
     }
 
     await sock.sendMessage(from, {
-        react: { text: success ? "✅" : "❌", key: msg.key }
+        react: { text: success ? "🔥" : "❌", key: msg.key }
     });
 }
 /* ============================================================
