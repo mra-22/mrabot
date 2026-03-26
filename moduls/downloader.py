@@ -189,7 +189,10 @@ def ig_api_backup(url):
 # YTDLP DOWNLOAD
 # =============================
 def download_video(url):
+    
     try:
+        print("PATH:", os.getcwd())
+        print("COOKIES ADA:", os.path.exists("/app/ig_cookies"))
         opts = {
             "format": "best",
             "quiet": True,
