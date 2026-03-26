@@ -336,6 +336,68 @@ export async function play(sock, msg, from, sender, cmd, args) {
         react: { text: success ? "✅" : "❌", key: msg.key }
     });
 }
+
+
+/* ============================================================
+   ==================     LIRIK LAGU     ======================
+   ============================================================*/
+export async function Lirik(sock, msg, from, sender, cmd, args) {
+    const query = args.join(" ");
+
+    if (!query) {
+        return sock.sendMessage(from, {
+            text: "❗ Contoh: !lirik snoop dogg beautiful"
+        }, { quoted: msg });
+    }
+
+    await sock.sendMessage(from, {
+        react: { text: "⏳", key: msg.key }
+    });
+
+    try {
+        let artist = "";
+        let title = "";
+
+        if (query.includes("-")) {
+            [artist, title] = query.split("-").map(v => v.trim());
+        } else {
+            title = query;
+        }
+
+        const res = await fetch(
+            `https://api.lyrics.ovh/v1/${encodeURIComponent(artist || "unknown")}/${encodeURIComponent(title)}`
+        );
+
+        const json = await res.json();
+
+        if (!json.lyrics) {
+            return sock.sendMessage(from, {
+                text: "❌ Lirik tidak ditemukan"
+            }, { quoted: msg });
+        }
+
+        let lyrics = json.lyrics;
+
+        if (lyrics.length > 3500) {
+            lyrics = lyrics.slice(0, 3500) + "\n\n...dipotong";
+        }
+
+        await sock.sendMessage(from, {
+            text: `🎶 *LIRIK LAGU*\n\n🎵 ${title}\n\n${lyrics}`
+        }, { quoted: msg });
+
+        await sock.sendMessage(from, {
+            react: { text: "✅", key: msg.key }
+        });
+
+    } catch (e) {
+        console.log(e);
+
+        await sock.sendMessage(from, {
+            text: "❌ Error mengambil lirik"
+        }, { quoted: msg });
+    }
+}
 /* ============================================================
    ==================  DOWNLOAD APK  ==========================
    ============================================================*/
