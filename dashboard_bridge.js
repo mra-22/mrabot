@@ -267,12 +267,40 @@ export function startDashboardBridge(sock, ownerNumber) {
                 }
 
                 if (cmd === "!startbot") {
-
                     fs.writeFileSync(STATUS_FILE, "RUNNING")
+                    console.log("✅ Bot diaktifkan kembali via dashboard")
 
-                    continue
+                    // 1️⃣ Aktifkan flag global
+                    BOT_ACTIVE = true;
+
+                    // 2️⃣ Reset sentToday supaya semua scheduler bisa jalan lagi
+                    sentToday = {
+                        subuh: { wib: false, wita: false, wit: false },
+                        dzuhur: { wib: false, wita: false, wit: false },
+                        ashar: { wib: false, wita: false, wit: false },
+                        maghrib: { wib: false, wita: false, wit: false },
+                        isya: { wib: false, wita: false, wit: false },
+                        morning: false,
+                        night: false,
+                        hadith: false
+                    };
+
+                    // 3️⃣ Restart scheduler utama
+                    if (!schedulerInterval) startScheduler();
+
+                    // 4️⃣ Bisa restart interval lain kalau sebelumnya dimatikan
+                    if (!groupCacheInterval) {
+                        groupCacheInterval = setInterval(updateGroupCache, 60 * 60 * 1000); // contoh 1 jam
+                        console.log("✅ Interval update group cache diaktifkan")
+                    }
+
+                    if (!reset14DayInterval) {
+                        reset14DayInterval = setInterval(reset14DayFunction, 60 * 1000); // contoh 1 menit cek reset
+                        console.log("✅ Interval reset 14 hari diaktifkan")
+                    }
+
+                    continue;
                 }
-
                 // =========================
                 // COMMAND NORMAL
                 // =========================
