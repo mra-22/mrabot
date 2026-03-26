@@ -216,12 +216,54 @@ export function startDashboardBridge(sock, ownerNumber) {
                 // =========================
 
                 if (cmd === "!stopbot") {
-
                     fs.writeFileSync(STATUS_FILE, "STOPPED")
+                    console.log("⚠️ Bot dihentikan via dashboard (hanya otomatis dimatikan)")
 
-                    console.log("Bot dihentikan dashboard")
+                    // 1️⃣ Flag global
+                    BOT_ACTIVE = false;  // matikan safeSendMessage & broadcast otomatis
+                    broadcasting = false; // hentikan proses broadcast jika ada
+                    stopBroadcast = true; // hentikan queue broadcast
+                    isBroadcasting = false;
+                    broadcastQueue = [];
 
-                    process.exit(0)
+                    // 2️⃣ Hentikan scheduler interval utama
+                    if (schedulerInterval) {
+                        clearInterval(schedulerInterval);
+                        schedulerInterval = null;
+                        console.log("⚠️ Scheduler utama dimatikan")
+                    }
+
+                    // 3️⃣ Hentikan interval update group cache (jika ada)
+                    if (typeof groupCacheInterval !== "undefined" && groupCacheInterval) {
+                        clearInterval(groupCacheInterval);
+                        groupCacheInterval = null;
+                        console.log("⚠️ Interval update group cache dimatikan")
+                    }
+
+                    // 4️⃣ Hentikan interval reset 14 hari
+                    if (typeof reset14DayInterval !== "undefined" && reset14DayInterval) {
+                        clearInterval(reset14DayInterval);
+                        reset14DayInterval = null;
+                        console.log("⚠️ Interval reset 14 hari dimatikan")
+                    }
+
+                    // 5️⃣ Reset flags supaya semua harian / adzan / hadits dianggap sudah terkirim
+                    sentToday = {
+                        subuh: { wib: true, wita: true, wit: true },
+                        dzuhur: { wib: true, wita: true, wit: true },
+                        ashar: { wib: true, wita: true, wit: true },
+                        maghrib: { wib: true, wita: true, wit: true },
+                        isya: { wib: true, wita: true, wit: true },
+                        morning: true,
+                        night: true,
+                        hadith: true
+                    };
+
+                    // 6️⃣ Kosongkan queue broadcast & groupCache supaya tidak ada pesan otomatis
+                    broadcastQueue = [];
+                    groupCache = [];
+
+                    continue; // jangan exit, lanjut loop command dashboard
                 }
 
                 if (cmd === "!startbot") {
