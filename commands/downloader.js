@@ -307,41 +307,38 @@ export async function play(sock, msg, from, sender, cmd, args) {
     // ======================
     // 🔥 2. FALLBACK API 1
     // ======================
-    if (!success) {
+   if (!success && videoUrl) {
         try {
-            const res = await fetch(`https://api.vevioz.com/api/button/mp3/${encodeURIComponent(query)}`);
+            const res = await fetch(`https://api.vevioz.com/api/button/mp3/${encodeURIComponent(videoUrl)}`);
             const html = await res.text();
-
+    
             await sock.sendMessage(from, {
-                text: `⚠️ yt-dlp gagal.\nSilakan download di sini:\n${html}`
-            }, { quoted: msg });
-
+                text: `⚠️ yt-dlp gagal.\nDownload di sini:\n${html}`
+            });
+    
             success = true;
-
         } catch (e) {
-            console.log("❌ fallback 1 gagal");
+             console.log("fallback 1 gagal");
         }
     }
-
     // ======================
     // 🔥 3. FALLBACK API 2
     // ======================
-    if (!success) {
+   if (!success && videoUrl) {
         try {
-            const res = await fetch(`https://ytdl-api.caliphdev.com/download/audio?url=${encodeURIComponent(query)}`);
+            const res = await fetch(`https://ytdl-api.caliphdev.com/download/audio?url=${encodeURIComponent(videoUrl)}`);
             const json = await res.json();
-
+    
             if (json.result?.download_url) {
                 await sock.sendMessage(from, {
                     audio: { url: json.result.download_url },
                     mimetype: "audio/mpeg"
-                }, { quoted: msg });
-
+                });
+    
                 success = true;
             }
-
         } catch (e) {
-            console.log("❌ fallback 2 gagal");
+            console.log("fallback 2 gagal");
         }
     }
 
