@@ -31,7 +31,9 @@ WORKDIR /app
 
 # Node deps
 COPY package*.json ./
-RUN npm install --omit=dev
+
+# install dependencies termasuk cheerio
+RUN npm cache clean --force && npm install --omit=dev --legacy-peer-deps
 
 # Copy project
 COPY . .
