@@ -6,7 +6,6 @@ import subprocess
 import requests
 from yt_dlp import YoutubeDL
 from playwright.sync_api import sync_playwright
-from bs4 import BeautifulSoup
 
 OUTPUT_DIR = "videos"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -20,6 +19,12 @@ class QuietLogger:
     def error(self, msg): print(msg, file=sys.stderr)
 
 # =============================
+# DEBUG (WAJIB CEK)
+# =============================
+print("PATH:", os.getcwd())
+print("COOKIES ADA:", os.path.exists("/app/ig_cookies"))
+
+# =============================
 # EXPAND URL
 # =============================
 def expand_url(url):
@@ -30,7 +35,7 @@ def expand_url(url):
         return url
 
 # =============================
-# CONVERT VIDEO
+# CONVERT VIDEO (WA READY)
 # =============================
 def convert_to_whatsapp_mp4(path):
     output = os.path.splitext(path)[0] + "_wa.mp4"
@@ -57,7 +62,6 @@ def convert_to_whatsapp_mp4(path):
 # =============================
 def tiktok_slideshow(url):
     import time
-
     images = []
 
     with sync_playwright() as p:
@@ -65,7 +69,6 @@ def tiktok_slideshow(url):
             headless=True,
             args=[
                 "--no-sandbox",
-                "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
                 "--disable-blink-features=AutomationControlled"
             ]
@@ -91,13 +94,10 @@ def tiktok_slideshow(url):
 
         for img in imgs:
             src = img.get_attribute("src")
-            if not src: continue
-
-            if "tiktokcdn" in src:
+            if src and "tiktokcdn" in src:
                 images.append(src)
 
         images = list(dict.fromkeys(images))[:10]
-
         browser.close()
 
     files = []
@@ -119,31 +119,57 @@ def tiktok_slideshow(url):
     return True
 
 # =============================
-# INSTAGRAM FALLBACK
+# INSTAGRAM FALLBACK (JSON FIX)
 # =============================
 def instagram_fallback(url):
     try:
-        headers = {"User-Agent":"Mozilla/5.0"}
-        html = requests.get(url,headers=headers).text
+        headers = {"User-Agent": "Mozilla/5.0"}
 
-        video = re.search(r'"video_url":"([^"]+)"', html)
-        if not video:
-            raise Exception("Video tidak ditemukan")
+        api = url.split("?")[0] + "?__a=1&__d=dis"
+        r = requests.get(api, headers=headers, timeout=15)
+        data = r.json()
 
-        video_url = video.group(1).replace("\\u0026","&")
+        video_url = data["items"][0]["video_versions"][0]["url"]
 
-        fn = f"{OUTPUT_DIR}/instagram.mp4"
-        open(fn,"wb").write(requests.get(video_url).content)
+        fn = os.path.join(OUTPUT_DIR, "instagram.mp4")
+        vid = requests.get(video_url, timeout=20).content
 
-        print("::FILE::"+os.path.abspath(fn))
-        print("::INFO::"+json.dumps({
-            "title":"Instagram Video",
-            "uploader":"Instagram"
+        with open(fn, "wb") as f:
+            f.write(vid)
+
+        print("::FILE::" + os.path.abspath(fn))
+        print("::INFO::" + json.dumps({
+            "title": "Instagram Video",
+            "uploader": "Instagram"
         }))
         return True
 
     except Exception as e:
-        print("[IG ERROR]",e,file=sys.stderr)
+        print("[IG FALLBACK ERROR]", e, file=sys.stderr)
+        return False
+
+# =============================
+# INSTAGRAM BACKUP API
+# =============================
+def ig_api_backup(url):
+    try:
+        api = f"https://api.tiklydown.eu.org/api/download?url={url}"
+        res = requests.get(api, timeout=15).json()
+
+        if res.get("video"):
+            fn = os.path.join(OUTPUT_DIR, "ig_api.mp4")
+            vid = requests.get(res["video"], timeout=20).content
+
+            with open(fn, "wb") as f:
+                f.write(vid)
+
+            print("::FILE::" + os.path.abspath(fn))
+            print("::INFO::" + json.dumps({
+                "title": "Instagram Video",
+                "uploader": "API"
+            }))
+            return True
+    except:
         return False
 
 # =============================
@@ -152,37 +178,45 @@ def instagram_fallback(url):
 def download_video(url):
     try:
         opts = {
-            "format":"bv*+ba/best",
-            "quiet":True,
-            "noplaylist":True,
-            "outtmpl":OUTPUT_DIR+"/%(id)s.%(ext)s",
-            "logger":QuietLogger(),
+            "format": "best",
+            "quiet": True,
+            "noplaylist": True,
+            "outtmpl": OUTPUT_DIR + "/%(id)s.%(ext)s",
+            "logger": QuietLogger(),
 
-            # 🔥 COOKIES IG
             "cookiefile": "/app/ig_cookies",
 
-            "http_headers":{
-                "User-Agent":"Mozilla/5.0"
+            "http_headers": {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Referer": "https://www.instagram.com/"
+            },
+
+            "extractor_args": {
+                "instagram": {
+                    "api_version": "v1",
+                    "include_dash_manifest": False
+                }
             }
         }
 
         with YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url,download=True)
+            info = ydl.extract_info(url, download=True)
             file = ydl.prepare_filename(info)
 
         final = convert_to_whatsapp_mp4(file)
 
-        print("::FILE::"+os.path.abspath(final))
-        print("::INFO::"+json.dumps({
-            "title":info.get("title"),
-            "uploader":info.get("uploader"),
-            "duration":info.get("duration"),
-            "thumbnail":info.get("thumbnail")
+        print("::FILE::" + os.path.abspath(final))
+        print("::INFO::" + json.dumps({
+            "title": info.get("title"),
+            "uploader": info.get("uploader"),
+            "duration": info.get("duration"),
+            "thumbnail": info.get("thumbnail")
         }))
         return True
 
     except Exception as e:
-        print("[YTDLP ERROR]",e,file=sys.stderr)
+        print("[YTDLP ERROR]", e, file=sys.stderr)
         return False
 
 # =============================
@@ -202,14 +236,19 @@ if __name__ == "__main__":
         except:
             pass
 
-    # yt-dlp utama
+    # 1. yt-dlp utama
     if download_video(url):
         sys.exit(0)
 
-    # IG fallback
+    # 2. IG fallback JSON
     if "instagram.com" in url:
         if instagram_fallback(url):
             sys.exit(0)
 
-    print("[DOWNLOAD FAILED]",file=sys.stderr)
+    # 3. IG backup API
+    if "instagram.com" in url:
+        if ig_api_backup(url):
+            sys.exit(0)
+
+    print("[DOWNLOAD FAILED]", file=sys.stderr)
     sys.exit(1)
