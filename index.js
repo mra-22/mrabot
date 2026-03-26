@@ -391,7 +391,79 @@ let lastGroupFetch = 0
 // ======================
 
 let schedulerStarted = false
+let lastResetWeek = null;
 
+setInterval(async () => {
+    if (!sock || !sock.user) return; // pastikan bot ready
+
+    const now = new Date();
+
+    const hari = now.getDay(); // 1 = Senin
+    const jam = now.getHours();
+    const menit = now.getMinutes();
+
+    // hitung minggu ke berapa
+    const firstDay = new Date(now.getFullYear(), 0, 1);
+    const week = Math.ceil((((now - firstDay) / 86400000) + firstDay.getDay() + 1) / 7);
+
+    // Reset tiap Senin jam 00:00
+    if (hari === 1 && jam === 0 && menit === 0) {
+        if (lastResetWeek !== week) {
+
+            console.log("🧹 Reset mingguan dimulai...");
+
+            const CHAT_COUNT_PATH = './database/chatcount.json';
+
+            let chatCount = {};
+            if (fs.existsSync(CHAT_COUNT_PATH)) {
+                chatCount = JSON.parse(fs.readFileSync(CHAT_COUNT_PATH));
+            }
+
+            // 🔥 ambil top user sebelum reset
+            for (const groupId in chatCount) {
+                const users = chatCount[groupId];
+
+                const sorted = Object.entries(users)
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 3);
+
+                let text = `╭──📊 *RESET MINGGUAN* ──⬣
+│ Statistik pesan telah direset!
+│
+│ 🏆 Top Member Minggu Lalu:
+`;
+
+                if (sorted.length === 0) {
+                    text += `│ (Belum ada data)\n`;
+                } else {
+                    sorted.forEach((u, i) => {
+                        const medal = ['🥇', '🥈', '🥉'][i] || '🏅';
+                        text += `│ ${medal} @${u[0].split('@')[0]} (${u[1]} pesan)\n`;
+                    });
+                }
+
+                text += `╰─────────────⬣`;
+
+                try {
+                    await sock.sendMessage(groupId, {
+                        text,
+                        mentions: sorted.map(u => u[0])
+                    });
+                } catch (err) {
+                    console.log("❌ Gagal kirim reset ke:", groupId);
+                }
+            }
+
+            // 🧹 reset data
+            fs.writeFileSync(CHAT_COUNT_PATH, JSON.stringify({}, null, 2));
+
+            lastResetWeek = week;
+
+            console.log("✅ Reset mingguan selesai");
+        }
+    }
+
+}, 60000);
 // ======================
 // UPDATE GROUP CACHE SAFE
 // ======================
