@@ -30,7 +30,7 @@ const customLogger = pino({
         options: { ignore: 'pid,hostname', colorize: true }
     }
 });
-
+bot
 // ======================
 // Flag Bot aktif / tidak
 // ======================
@@ -672,7 +672,7 @@ setInterval(() => {
         console.log(`⚠️ Memory tinggi: ${used.toFixed(2)} MB`)
         global.gc?.()
     }
-global.sentToday
+    global.sentToday
 }, 300000)
 // ======================
 // Status siap
@@ -1045,12 +1045,12 @@ async function startBot() {
                 })
 
                 // ❌ CEK BOT ACTIVE SEBELUM HANDLER
-                if (!BOT_ACTIVE) {
-                    // kirim pesan ke pengirim kalau mau
+                const isCommand = m.message?.conversation?.startsWith("!") || m.message?.conversation?.startsWith(".");
+                if (!BOT_ACTIVE && isCommand) {
                     await sock.sendMessage(m.key.remoteJid, {
                         text: '⚠️ Bot sedang OFF. Tidak bisa menerima command.'
-                    })
-                    continue // skip ke message berikutnya
+                    });
+                    continue;
                 }
 
                 // baru handler utama
