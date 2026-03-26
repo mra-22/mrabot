@@ -9,7 +9,7 @@ from playwright.sync_api import sync_playwright
 
 OUTPUT_DIR = "videos"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
-
+print("COOKIES ADA:", os.path.exists("/app/ig_cookies"))
 # =============================
 # LOGGER
 # =============================
