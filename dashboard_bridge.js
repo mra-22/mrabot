@@ -248,7 +248,7 @@ export function startDashboardBridge(sock, ownerNumber) {
                     }
 
                     // 5️⃣ Reset flags supaya semua harian / adzan / hadits dianggap sudah terkirim
-                    sentToday = {
+                    global.sentToday = {
                         subuh: { wib: true, wita: true, wit: true },
                         dzuhur: { wib: true, wita: true, wit: true },
                         ashar: { wib: true, wita: true, wit: true },
@@ -274,7 +274,7 @@ export function startDashboardBridge(sock, ownerNumber) {
                     global.BOT_ACTIVE = true;
 
                     // 2️⃣ Reset sentToday supaya semua scheduler bisa jalan lagi
-                    sentToday = {
+                    global.sentToday = {
                         subuh: { wib: false, wita: false, wit: false },
                         dzuhur: { wib: false, wita: false, wit: false },
                         ashar: { wib: false, wita: false, wit: false },
