@@ -51,4 +51,6 @@ RUN playwright install chromium
 ENV PYTHONUNBUFFERED=1
 ENV NODE_ENV=production
 
-CMD ["sh", "-c", "node index.js & python api.py"]
+COPY start.sh .
+RUN chmod +x start.sh
+CMD ["./start.sh"]
