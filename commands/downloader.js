@@ -341,12 +341,14 @@ export async function play(sock, msg, from, sender, cmd, args) {
 /* ============================================================
    ==================     LIRIK LAGU     ======================
    ============================================================*/
-export async function Lirik(sock, msg, from, sender, cmd, args) {
-    const query = args.join(" ");
+export async function lirik(sock, msg, from, sender, cmd, args) {
+    if (!Array.isArray(args)) args = [];
+
+    const query = args.join(" ").trim();
 
     if (!query) {
         return sock.sendMessage(from, {
-            text: "❗ Contoh: !lirik snoop dogg beautiful"
+            text: "❗ Masukkan judul lagu\nContoh: !lirik eminem mockinbird"
         }, { quoted: msg });
     }
 
@@ -354,49 +356,114 @@ export async function Lirik(sock, msg, from, sender, cmd, args) {
         react: { text: "⏳", key: msg.key }
     });
 
+    let success = false;
+
     try {
         let artist = "";
         let title = "";
 
+        // =========================
+        // PARSE INPUT
+        // =========================
         if (query.includes("-")) {
             [artist, title] = query.split("-").map(v => v.trim());
         } else {
             title = query;
         }
 
-        const res = await fetch(
-            `https://api.lyrics.ovh/v1/${encodeURIComponent(artist || "unknown")}/${encodeURIComponent(title)}`
-        );
+        async function getLyrics(a, t) {
+            try {
+                const res = await fetch(
+                    `https://api.lyrics.ovh/v1/${encodeURIComponent(a || "unknown")}/${encodeURIComponent(t)}`
+                );
+                const json = await res.json();
+                return json?.lyrics || null;
+            } catch {
+                return null;
+            }
+        }
 
-        const json = await res.json();
+        let lyrics = await getLyrics(artist, title);
 
-        if (!json.lyrics) {
-            return sock.sendMessage(from, {
+        // swap fallback
+        if (!lyrics) {
+            lyrics = await getLyrics(title, artist);
+        }
+
+        // itunes fallback
+        if (!lyrics) {
+            try {
+                const res = await fetch(
+                    `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&limit=1`
+                );
+                const data = await res.json();
+
+                if (data.results?.length) {
+                    const r = data.results[0];
+
+                    artist = r.artistName;
+                    title = r.trackName;
+
+                    lyrics = await getLyrics(artist, title);
+                }
+            } catch (e) {}
+        }
+
+        // =========================
+        // FAIL HANDLING
+        // =========================
+        if (!lyrics) {
+            await sock.sendMessage(from, {
                 text: "❌ Lirik tidak ditemukan"
             }, { quoted: msg });
+
+            return sock.sendMessage(from, {
+                react: { text: "❌", key: msg.key }
+            });
         }
 
-        let lyrics = json.lyrics;
+        // =========================
+        // CLEAN TEXT
+        // =========================
+        lyrics = lyrics
+            .replace(/\r/g, "")
+            .replace(/\n{3,}/g, "\n\n")
+            .trim();
 
-        if (lyrics.length > 3500) {
-            lyrics = lyrics.slice(0, 3500) + "\n\n...dipotong";
+        const header = `🎶 *LIRIK LAGU*\n🎵 ${title}\n👤 ${artist || "-"}\n\n`;
+
+        // =========================
+        // CHUNK SAFE (WA LIMIT)
+        // =========================
+        const max = 3800;
+        let parts = [];
+
+        for (let i = 0; i < lyrics.length; i += max) {
+            parts.push(lyrics.slice(i, i + max));
         }
 
-        await sock.sendMessage(from, {
-            text: `🎶 *LIRIK LAGU*\n\n🎵 ${title}\n\n${lyrics}`
-        }, { quoted: msg });
+        // =========================
+        // SEND ALL PARTS
+        // =========================
+        for (let i = 0; i < parts.length; i++) {
+            await sock.sendMessage(from, {
+                text: i === 0 ? header + parts[i] : parts[i]
+            }, { quoted: i === 0 ? msg : null });
+        }
 
-        await sock.sendMessage(from, {
-            react: { text: "✅", key: msg.key }
-        });
+        success = true;
 
     } catch (e) {
-        console.log(e);
+        console.log("❌ LIRIK ERROR:", e);
 
         await sock.sendMessage(from, {
-            text: "❌ Error mengambil lirik"
+            text: "❌ Terjadi kesalahan saat mengambil lirik"
         }, { quoted: msg });
     }
+
+    await sock.sendMessage(from, {
+        react: { text: success ? "✅" : "❌", key: msg.key }
+    });
 }
 /* ============================================================
    ==================  DOWNLOAD APK  ==========================
