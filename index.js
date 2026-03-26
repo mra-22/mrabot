@@ -255,26 +255,23 @@ function addBroadcast(text) {
 }
 
 async function processBroadcastQueue() {
-
     if (isBroadcasting) return
     isBroadcasting = true
 
     while (broadcastQueue.length > 0) {
-
         const job = broadcastQueue.shift()
-
         try {
-
             if (!sock || !sock.user) return
-
             await sock.sendMessage(job.gid, { text: job.text })
-
             console.log("📤 Broadcast:", job.gid)
-
         } catch (err) {
-
-            console.log("❌ Gagal kirim:", job.gid)
-
+            console.log("❌ Gagal kirim:", job.gid, err.message)
+            // retry logic
+            if (err?.statusCode === 429) {
+                console.log("⏳ Rate limit, push kembali ke queue setelah delay")
+                broadcastQueue.unshift(job)
+                await delay(5000) // tunggu 5 detik sebelum coba lagi
+            }
         }
 
         await delay(2500) // delay aman WA
