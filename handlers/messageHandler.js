@@ -5,7 +5,7 @@ import { ownerCommand } from '../commands/owner.js';
 import { adminMenuCommand } from '../commands/admin.js';
 import { omCommand, gambarCommand, cuacaCommand, vidCommand } from '../commands/ai.js';
 import { sendMediaBack } from '../commands/q.js';
-import { downloaderCommand, play, Apk } from '../commands/downloader.js';
+import { downloaderCommand, play, Apk, Lirik } from '../commands/downloader.js';
 import { userCommands, claimVidCommand, tflimitCommand, addLimitCommand, setLimitCommand, remLimitCommand } from "../commands/user.js";
 import { bucinCommands } from "../commands/bucin.js";
 import {
@@ -325,7 +325,10 @@ export default async function messageHandler(m, sock,) {
     if (cmd === "apk") {
         return await Apk(sock, msg, from, sender, cmd, args);
     }
-
+    
+    if (cmd === "!lirik") {
+        return Lirik(sock, msg, from, sender, cmd, args);
+    }
 
     // PROFIL & USER
     if (['daftar', 'profil'].includes(cmd)) {
