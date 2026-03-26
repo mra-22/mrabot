@@ -3,6 +3,8 @@ import path from "path";
 import fs from "fs";
 import util from "util";
 import { getSenderRawId, resolveToMainId } from "../moduls/user.js";
+import lyricsFinder from "lyrics-finder";
+
 
 const execPromise = util.promisify(exec);
 const pythonCmd = process.platform === "win32" ? "py" : "python3";
@@ -348,7 +350,7 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
 
     if (!rawQuery) {
         return sock.sendMessage(from, {
-            text: "❗ Contoh:\n*!lirik noah separuh aku*\n*!lirik eminem mockinbird*"
+            text: "❗ Contoh:\n*!lirik noah separuh aku*\n*!lirik eminem mockingbird*"
         }, { quoted: msg });
     }
 
@@ -359,9 +361,7 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
     let success = false;
 
     try {
-        // =========================
-        // CLEAN INPUT
-        // =========================
+        // ================= CLEAN QUERY =================
         let query = rawQuery
             .replace(/official|lyrics|lirik|video|audio/gi, "")
             .replace(/\s+/g, " ")
@@ -376,54 +376,25 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
             title = query;
         }
 
-        // =========================
-        // ENGINE 1 (lyrics.ovh)
-        // =========================
-        async function engine1(a, t) {
+        // ================= ENGINE UTAMA =================
+        async function getLyrics(a, t) {
             try {
-                const res = await fetch(
-                    `https://api.lyrics.ovh/v1/${encodeURIComponent(a || "unknown")}/${encodeURIComponent(t)}`
-                );
-                const json = await res.json();
-                return json?.lyrics || null;
+                return await lyricsFinder(a, t);
             } catch {
                 return null;
             }
         }
 
-        // =========================
-        // ENGINE 2 (chartlyrics - good for Indo)
-        // =========================
-        async function engine2(a, t) {
-            try {
-                const res = await fetch(
-                    `https://api.chartlyrics.com/apiv1.asmx/SearchLyricDirect?artist=${encodeURIComponent(a)}&song=${encodeURIComponent(t)}`
-                );
-                const text = await res.text();
-
-                const match = text.match(/<Lyric>([\s\S]*?)<\/Lyric>/i);
-                return match ? match[1].trim() : null;
-            } catch {
-                return null;
-            }
-        }
-
-        // =========================
-        // TRY ALL ENGINES
-        // =========================
         let lyrics =
-            await engine1(artist, title) ||
-            await engine1(title, artist) ||
-            await engine2(artist, title) ||
-            await engine2(title, artist);
+            await getLyrics(artist, title) ||
+            await getLyrics("", title) ||
+            await getLyrics(title, artist);
 
-        // =========================
-        // ITUNES SMART FIX (AUTO DETECT ARTIST/SONG)
-        // =========================
+        // ================= ITUNES FALLBACK =================
         if (!lyrics) {
             try {
                 const res = await fetch(
-                    `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&limit=5`
+                    `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=10`
                 );
                 const data = await res.json();
 
@@ -432,9 +403,7 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
                         const a = item.artistName;
                         const t = item.trackName;
 
-                        lyrics =
-                            await engine1(a, t) ||
-                            await engine2(a, t);
+                        lyrics = await getLyrics(a, t);
 
                         if (lyrics) {
                             artist = a;
@@ -446,9 +415,7 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
             } catch {}
         }
 
-        // =========================
-        // FAIL
-        // =========================
+        // ================= FAIL =================
         if (!lyrics) {
             await sock.sendMessage(from, {
                 text: "❌ Lirik tidak ditemukan\n💡 Coba ketik lebih lengkap (contoh: noah separuh aku)"
@@ -459,24 +426,20 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
             });
         }
 
-        // =========================
-        // CLEAN OUTPUT
-        // =========================
+        // ================= CLEAN OUTPUT =================
         lyrics = lyrics
             .replace(/\r/g, "")
             .replace(/\n{3,}/g, "\n\n")
             .trim();
 
         const header =
-`🎶 *LIRIK INDONESIA & GLOBAL*
+`🎶 *LIRIK DITEMUKAN*
 
-🎵 ${title}
+🎵 ${title || "-"}
 👤 ${artist || "-"}
 ━━━━━━━━━━━━━━━━━━\n`;
 
-        // =========================
-        // SAFE CHUNK
-        // =========================
+        // ================= CHUNK SAFETY =================
         const max = 3800;
         let parts = [];
 
