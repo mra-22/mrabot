@@ -235,100 +235,135 @@ export async function play(sock, msg, from, sender, cmd, args) {
     const query = args.join(" ");
 
     if (!query) {
-        return sock.sendMessage(
-            from,
-            {
-                text: `╭──📥 DOWNLOADER ──⬣
+        return sock.sendMessage(from, {
+            text: `╭──📥 DOWNLOADER ──⬣
 │❗ Masukkan judul lagu.
 │📌 Contoh: *.play alan walker faded*
 ╰⬣`,
-            },
-            { quoted: msg }
-        );
+        }, { quoted: msg });
+    }
+
+    const userDB = JSON.parse(fs.readFileSync("./database/user.json", "utf-8"));
+    const rawId = getSenderRawId(msg);
+    const userKey = resolveToMainId(rawId);
+    const user = userDB?.[String(userKey)] ?? null;
+
+    if (!user) {
+        return sock.sendMessage(from, {
+            text: `╭──🎵 PLAY ──⬣
+│🚫 Kamu belum terdaftar.
+│✅ Gunakan *!daftar*
+╰⬣`,
+        }, { quoted: msg });
+    }
+
+    if (typeof user.Vidlimit !== "number") user.Vidlimit = 0;
+
+    if (user.Vidlimit <= 0) {
+        return sock.sendMessage(from, {
+            text: `╭──🎵 PLAY ──⬣
+│🚫 Limit habis
+│🎁 *!lmclaim*
+╰⬣`,
+        }, { quoted: msg });
     }
 
     await sock.sendMessage(from, { react: { text: "⏳", key: msg.key } });
+    await sock.sendMessage(from, { text: `🔍 Mencari *${query}*...` }, { quoted: msg });
 
-    await sock.sendMessage(
-        from,
-        { text: `🔍 Mencari lagu *${query}*...` },
-        { quoted: msg }
-    );
+    let success = false;
 
+    // ======================
+    // 🔥 1. TRY PYTHON (yt-dlp)
+    // ======================
     try {
-        const { stdout, stderr } = await execPromise(
-            `python3 ./moduls/downloader_lagu.py "${query}"`
+        const { stdout } = await execPromise(
+            `${pythonCmd} ./moduls/downloader_lagu.py "${query}"`
         );
 
-        if (stderr) console.error("[PYTHON STDERR]", stderr);
+        const mp3Match = stdout.match(/::SUCCESS::(.+)/);
+        const titleMatch = stdout.match(/::TITLE::(.+)/);
 
-        const mp3Match = stdout.match(/::MP3::(.+)/);
-        const infoMatch = stdout.match(/::INFO::({.*})/);
+        if (mp3Match) {
+            const mp3Path = mp3Match[1].trim();
+            const title = titleMatch ? titleMatch[1].trim() : query;
 
-        if (!mp3Match) {
-            throw new Error("MP3 path tidak ditemukan");
-        }
+            const buffer = fs.readFileSync(mp3Path);
 
-        const mp3Path = mp3Match[1].trim();
-
-        let info = {};
-        if (infoMatch) {
-            try {
-                info = JSON.parse(infoMatch[1]);
-            } catch { }
-        }
-
-        const caption = `╭━━━〔 🎵 PLAY MUSIC 〕━━━⬣
-┃ 🎧 Judul   : ${info.title || "-"}
-┃ 📺 Channel : ${info.uploader || "-"}
-┃ ⏱️ Durasi  : ${info.duration || 0} detik
-╰━━━━━━━━━━━━━━━━⬣`;
-
-        if (info.thumbnail) {
-            await sock.sendMessage(
-                from,
-                {
-                    image: { url: info.thumbnail },
-                    caption,
-                },
-                { quoted: msg }
-            );
-        } else {
-            await sock.sendMessage(from, { text: caption }, { quoted: msg });
-        }
-
-        if (!fs.existsSync(mp3Path)) {
-            throw new Error("File MP3 tidak ditemukan di path");
-        }
-
-        const audioBuffer = fs.readFileSync(mp3Path);
-
-        await sock.sendMessage(
-            from,
-            {
-                audio: audioBuffer,
+            await sock.sendMessage(from, {
+                audio: buffer,
                 mimetype: "audio/mpeg",
-                fileName: "music.mp3",
-                ptt: false,
-            },
-            { quoted: msg }
-        );
+                fileName: `${title}.mp3`
+            }, { quoted: msg });
 
-        fs.unlinkSync(mp3Path);
-
-        await sock.sendMessage(from, { react: { text: "✅", key: msg.key } });
+            fs.unlinkSync(mp3Path);
+            success = true;
+        }
 
     } catch (e) {
-        console.error(e);
+        console.log("❌ yt-dlp gagal → fallback");
+    }
 
+    // ======================
+    // 🔥 2. FALLBACK API 1
+    // ======================
+    if (!success) {
+        try {
+            const res = await fetch(`https://api.vevioz.com/api/button/mp3/${encodeURIComponent(query)}`);
+            const html = await res.text();
+
+            await sock.sendMessage(from, {
+                text: `⚠️ yt-dlp gagal.\nSilakan download di sini:\n${html}`
+            }, { quoted: msg });
+
+            success = true;
+
+        } catch (e) {
+            console.log("❌ fallback 1 gagal");
+        }
+    }
+
+    // ======================
+    // 🔥 3. FALLBACK API 2
+    // ======================
+    if (!success) {
+        try {
+            const res = await fetch(`https://ytdl-api.caliphdev.com/download/audio?url=${encodeURIComponent(query)}`);
+            const json = await res.json();
+
+            if (json.result?.download_url) {
+                await sock.sendMessage(from, {
+                    audio: { url: json.result.download_url },
+                    mimetype: "audio/mpeg"
+                }, { quoted: msg });
+
+                success = true;
+            }
+
+        } catch (e) {
+            console.log("❌ fallback 2 gagal");
+        }
+    }
+
+    // ======================
+    // ❌ FINAL FAIL
+    // ======================
+    if (!success) {
         await sock.sendMessage(from, { react: { text: "❌", key: msg.key } });
 
-        await sock.sendMessage(
-            from,
-            { text: `⚠️ Gagal memproses permintaan.\n\n${e.message}` },
-            { quoted: msg }
-        );
+        return sock.sendMessage(from, {
+            text: "❌ Semua metode gagal. Coba lagi nanti."
+        }, { quoted: msg });
     }
+
+    // ======================
+    // ✅ SUCCESS
+    // ======================
+    await sock.sendMessage(from, { react: { text: "✅", key: msg.key } });
+
+    user.Vidlimit -= 1;
+    userDB[userKey] = user;
+    fs.writeFileSync("./database/user.json", JSON.stringify(userDB, null, 2));
 }
 /* ============================================================
    ==================  DOWNLOAD APK  ==========================
