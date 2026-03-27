@@ -5,7 +5,7 @@ import lyricsFinder from "lyrics-finder";
 // ================= CONFIG =================
 const CACHE_FILE = "./database/lirik_cache.json";
 
-// ================= LOAD CACHE =================
+// ================= CACHE =================
 function loadCache() {
     if (!fs.existsSync(CACHE_FILE)) return {};
     return JSON.parse(fs.readFileSync(CACHE_FILE));
@@ -15,25 +15,17 @@ function saveCache(cache) {
     fs.writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2));
 }
 
-// ================= DATABASE LAGU INDO =================
-const DB_LAGU = {
-    "bahagia lagi": "Piche Kota Bahagia Lagi",
-    "komang": "Raim Laode Komang",
-    "hati hati di jalan": "Tulus Hati Hati Di Jalan",
-    "melukis senja": "Budi Doremi Melukis Senja",
-    "sial": "Mahalini Sial",
-    "tak ingin usai": "Keisya Levronka Tak Ingin Usai",
-};
-
 // ================= NORMALIZE =================
 function normalize(text) {
     return text
         .toLowerCase()
         .replace(/official|lyrics|lirik|video|audio|mv/g, "")
         .replace(/[^a-z0-9\s]/g, "")
+        .replace(/\s+/g, " ")
         .trim();
 }
 
+// ================= CLEAN TITLE =================
 function cleanTitle(title) {
     return title
         .replace(/song and lyrics by/gi, "")
@@ -45,34 +37,53 @@ function cleanTitle(title) {
         .trim();
 }
 
-// 🔥 DETECT ARTIST + TITLE
-function formatTitleSmart(title) {
-    title = cleanTitle(title);
+// ================= AI DETECT ARTIST & TITLE =================
+function detectArtistTitle(raw, userQuery) {
+    raw = cleanTitle(raw);
 
-    // contoh: "Ijuk - Iyeth Bustami"
-    if (title.includes("-")) {
-        const parts = title.split("-").map(s => s.trim());
+    const parts = raw.split("-").map(s => s.trim());
 
-        if (parts.length >= 2) {
-            const left = parts[0];
-            const right = parts[1];
+    let artist = "";
+    let title = "";
 
-            // balik jadi Artist - Title
-            return `${right} ${left}`;
+    if (parts.length >= 2) {
+        const left = parts[0];
+        const right = parts[1];
+
+        // 🔥 AI RULE:
+        // kalau kanan lebih panjang → biasanya artist
+        if (right.length > left.length) {
+            artist = right;
+            title = left;
+        } else {
+            artist = left;
+            title = right;
+        }
+    } else {
+        // fallback pakai query user
+        const q = normalize(userQuery).split(" ");
+
+        if (q.length >= 2) {
+            artist = q.slice(-2).join(" ");
+            title = q.slice(0, -2).join(" ");
+        } else {
+            title = userQuery;
         }
     }
 
-    // fallback
-    return title;
+    return {
+        artist: artist.trim(),
+        title: title.trim(),
+        full: `${artist} ${title}`.trim()
+    };
 }
 
+// ================= SERPER =================
 async function searchSongSmart(query) {
     try {
         const { data } = await axios.post(
             "https://google.serper.dev/search",
-            {
-                q: query + " lagu",
-            },
+            { q: query + " lagu" },
             {
                 headers: {
                     "X-API-KEY": process.env.SERPER_API_KEY,
@@ -93,32 +104,26 @@ async function searchSongSmart(query) {
             ) {
                 console.log("[SERPER RAW]:", title);
 
-                const clean = cleanTitle(title);
-                const smart = formatTitleSmart(clean);
+                const detected = detectArtistTitle(title, query);
 
-                console.log("[SERPER CLEAN]:", clean);
-                console.log("[SERPER FINAL]:", smart);
+                console.log("[AI DETECT]:", detected);
 
-                return smart;
+                return detected;
             }
         }
 
-        return query;
+        return { full: query, artist: "", title: query };
     } catch (e) {
         console.log("[SERPER ERROR]", e.message);
-        return query;
+        return { full: query, artist: "", title: query };
     }
 }
-// ================= API FALLBACK =================
-async function lyricsAPI(query) {
-    try {
-        const parts = query.split(" ");
-        const artist = parts[0];
-        const title = parts.slice(1).join(" ");
 
+// ================= API FALLBACK =================
+async function lyricsAPI(artist, title) {
+    try {
         const url = `https://api.lyrics.ovh/v1/${artist}/${title}`;
         const { data } = await axios.get(url);
-
         return data?.lyrics || null;
     } catch {
         return null;
@@ -132,7 +137,7 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
 
     if (!query) {
         return sock.sendMessage(from, {
-            text: "Contoh: !lirik bahagia lagi"
+            text: "Contoh: !lirik ijuk iyeth bustami"
         }, { quoted: msg });
     }
 
@@ -142,7 +147,6 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
         react: { text: "⏳", key: msg.key }
     });
 
-    // ================= CACHE =================
     const cache = loadCache();
     const key = normalize(query);
 
@@ -153,37 +157,32 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
         }, { quoted: msg });
     }
 
-    let smartQuery = query;
-
-    // ================= 1. DB LOKAL =================
-    if (DB_LAGU[key]) {
-        smartQuery = DB_LAGU[key];
-        console.log("[DB MATCH]:", smartQuery);
-    }
-
-    // ================= 2. SERPER =================
-    else {
-        smartQuery = await searchSongSmart(query);
-        console.log("[SMART RESULT]:", smartQuery);
-    }
+    // ================= AI SEARCH =================
+    const detected = await searchSongSmart(query);
 
     let lyrics = null;
 
     // ================= TRY 1 =================
     try {
-        console.log("[TRY] lyrics-finder");
-        lyrics = await lyricsFinder("", smartQuery);
+        console.log("[TRY] lyrics-finder AI");
+        lyrics = await lyricsFinder(detected.artist, detected.title);
     } catch {}
 
     // ================= TRY 2 =================
     if (!lyrics) {
-        console.log("[TRY] API lyrics.ovh");
-        lyrics = await lyricsAPI(smartQuery);
+        console.log("[TRY] full query");
+        lyrics = await lyricsFinder("", detected.full);
     }
 
     // ================= TRY 3 =================
-    if (!lyrics && smartQuery !== query) {
-        console.log("[TRY] fallback original");
+    if (!lyrics && detected.artist) {
+        console.log("[TRY] API fallback");
+        lyrics = await lyricsAPI(detected.artist, detected.title);
+    }
+
+    // ================= TRY 4 =================
+    if (!lyrics) {
+        console.log("[TRY] original query");
         lyrics = await lyricsFinder("", query);
     }
 
@@ -196,8 +195,8 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
 🔎 Query: ${query}
 
 💡 Coba:
-- tambahkan nama artis
-- contoh: bahagia lagi piche`
+- tambahkan artis
+- contoh: ijuk iyeth bustami`
         }, { quoted: msg });
     }
 
@@ -209,7 +208,8 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
     const result =
 `🎶 LIRIK DITEMUKAN
 ━━━━━━━━━━━━━━
-🎵 ${smartQuery}
+🎤 ${detected.artist || "-"}
+🎵 ${detected.title || query}
 
 ${lyrics}`;
 
@@ -217,7 +217,6 @@ ${lyrics}`;
     cache[key] = result;
     saveCache(cache);
 
-    // ================= SEND =================
     await sock.sendMessage(from, {
         text: result
     }, { quoted: msg });
