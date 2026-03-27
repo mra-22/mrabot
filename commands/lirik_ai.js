@@ -1,5 +1,6 @@
 import fs from "fs";
 import axios from "axios";
+import * as cheerio from "cheerio";
 import lyricsFinder from "lyrics-finder";
 
 // ================= CONFIG =================
@@ -43,7 +44,6 @@ function detectArtistTitle(raw, userQuery) {
     let artist = "";
     let title = "";
 
-    // 🔥 FORMAT: "Judul - Artis"
     if (raw.includes("-")) {
         const parts = raw.split("-").map(s => s.trim());
 
@@ -53,7 +53,6 @@ function detectArtistTitle(raw, userQuery) {
         }
     }
 
-    // 🔥 fallback ke query user
     if (!artist || !title) {
         const q = normalize(userQuery).split(" ");
 
@@ -72,7 +71,7 @@ function detectArtistTitle(raw, userQuery) {
     };
 }
 
-// ================= SERPER =================
+// ================= SERPER SEARCH =================
 async function searchSongSmart(query) {
     try {
         const { data } = await axios.post(
@@ -100,7 +99,12 @@ async function searchSongSmart(query) {
 
                 const detected = detectArtistTitle(r.title, query);
 
-                console.log("[AI DETECT FIX]:", detected.artist, "-", detected.title);
+                console.log(
+                    "[AI DETECT FIX]:",
+                    detected.artist,
+                    "-",
+                    detected.title
+                );
 
                 return detected;
             }
@@ -121,6 +125,47 @@ async function lyricsAPI(artist, title) {
         const { data } = await axios.get(url);
         return data?.lyrics || null;
     } catch {
+        return null;
+    }
+}
+
+// ================= GOOGLE SCRAPER =================
+async function scrapeLyricsFromGoogle(query) {
+    try {
+        const url = `https://www.google.com/search?q=${encodeURIComponent(query + " lirik")}`;
+
+        const { data } = await axios.get(url, {
+            headers: {
+                "User-Agent": "Mozilla/5.0",
+            },
+        });
+
+        const $ = cheerio.load(data);
+
+        let lyrics = "";
+
+        $("span").each((i, el) => {
+            const text = $(el).text().trim();
+
+            if (
+                text.length > 15 &&
+                !text.includes("Google") &&
+                !text.includes("Search") &&
+                !text.includes("http")
+            ) {
+                lyrics += text + "\n";
+            }
+        });
+
+        lyrics = lyrics
+            .split("\n")
+            .filter(line => line.length > 5)
+            .join("\n");
+
+        return lyrics.trim() || null;
+
+    } catch (e) {
+        console.log("[GOOGLE SCRAPE ERROR]", e.message);
         return null;
     }
 }
@@ -182,6 +227,14 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
         lyrics = await lyricsFinder("", query);
     }
 
+    // ================= TRY 5 (🔥 PENYELAMAT) =================
+    if (!lyrics) {
+        console.log("[TRY] GOOGLE SCRAPE");
+        lyrics = await scrapeLyricsFromGoogle(
+            `${detected.title} ${detected.artist}`
+        );
+    }
+
     // ================= FAIL =================
     if (!lyrics) {
         return sock.sendMessage(from, {
@@ -190,9 +243,9 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
 
 🔎 Query: ${query}
 
-💡 Tips:
-- tambah artis
-- contoh: bahagia lagi piche kota`
+💡 Coba:
+- bahagia lagi piche kota
+- ijuk iyeth bustami`
         }, { quoted: msg });
     }
 
