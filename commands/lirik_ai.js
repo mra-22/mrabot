@@ -1,71 +1,71 @@
-import lyricsFinder from "lyrics-finder";
+import axios from "axios";
+import * as cheerio from "cheerio";
 
-// ================= NORMALIZE =================
-function normalize(q) {
-    return q
-        .toLowerCase()
-        .replace(/official|lyrics|lirik|video|audio|mv/g, "")
-        .trim();
-}
+const GENIUS_TOKEN = process.env.GENIUS_TOKEN;
 
-// ================= VALIDASI HASIL =================
-function isValidLyrics(lyrics, query) {
-    if (!lyrics) return false;
+// ================= SEARCH GENIUS =================
+async function searchGenius(query) {
+    try {
+        const res = await axios.get(
+            "https://api.genius.com/search",
+            {
+                headers: {
+                    Authorization: `Bearer ${GENIUS_TOKEN}`
+                },
+                params: {
+                    q: query
+                }
+            }
+        );
 
-    const qWords = query.toLowerCase().split(" ").filter(w => w.length > 3);
+        const hits = res.data.response.hits;
 
-    // minimal 1 kata dari query harus ada di lirik
-    return qWords.some(word => lyrics.toLowerCase().includes(word));
-}
+        if (!hits.length) return null;
 
-// ================= SMART QUERY =================
-function generateQueries(query) {
-    const q = query.toLowerCase();
+        // ambil hasil paling relevan
+        const song = hits[0].result;
 
-    const guesses = [
-        q,
-        q + " lyrics",
-        q + " lirik",
-    ];
+        return {
+            title: song.full_title,
+            url: song.url
+        };
 
-    // 🔥 kalau cuma 2 kata → coba bolak balik
-    const parts = q.split(" ");
-    if (parts.length === 2) {
-        guesses.push(`${parts[1]} ${parts[0]}`);
+    } catch (e) {
+        console.log("[GENIUS SEARCH ERROR]", e.message);
+        return null;
     }
+}
 
-    // 🔥 guess artist Indonesia populer
-    const artistHints = [
-        "piche kota",
-        "noah",
-        "hindia",
-        "juicy luicy",
-        "armada",
-        "mahalini",
-        "rizky febian",
-    ];
+// ================= SCRAPE LYRICS =================
+async function scrapeLyrics(url) {
+    try {
+        const { data } = await axios.get(url);
 
-    artistHints.forEach(artist => {
-        guesses.push(`${query} ${artist}`);
-    });
+        const $ = cheerio.load(data);
 
-    return [...new Set(guesses)];
+        let lyrics = "";
+
+        // genius pakai container ini
+        $("div[data-lyrics-container='true']").each((i, el) => {
+            lyrics += $(el).text() + "\n";
+        });
+
+        return lyrics.trim();
+
+    } catch (e) {
+        console.log("[SCRAPE ERROR]", e.message);
+        return null;
+    }
 }
 
 // ================= MAIN =================
 export async function lirik(sock, msg, from, sender, cmd, args) {
 
-    const query = (() => {
-        if (Array.isArray(args)) return args.join(" ").trim();
-        if (typeof args === "string") return args.trim();
-        return "";
-    })();
+    const query = Array.isArray(args) ? args.join(" ") : args;
 
-    console.log("[LIRIK RAW]:", query);
-
-    if (!query || query.length < 2) {
+    if (!query) {
         return sock.sendMessage(from, {
-            text: "Ketik: !lirik bahagia lagi"
+            text: "Contoh: !lirik bahagia lagi"
         }, { quoted: msg });
     }
 
@@ -73,63 +73,36 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
         react: { text: "⏳", key: msg.key }
     });
 
-    const q = normalize(query);
-    const queries = generateQueries(q);
+    console.log("[GENIUS SEARCH]:", query);
 
-    console.log("[SMART QUERIES]:", queries);
+    // 🔍 cari lagu
+    const result = await searchGenius(query);
 
-    let lyrics = null;
-    let usedQuery = "";
-
-    // ================= LOOP PENCARIAN =================
-    for (let qTry of queries) {
-        console.log("[TRY QUERY]:", qTry);
-
-        try {
-            const res = await lyricsFinder(qTry, "");
-
-            if (isValidLyrics(res, q)) {
-                lyrics = res;
-                usedQuery = qTry;
-                console.log("[VALID ✔]:", qTry);
-                break;
-            } else {
-                console.log("[INVALID ❌]:", qTry);
-            }
-
-        } catch (e) {
-            console.log("[ERROR]:", e.message);
-        }
-    }
-
-    // ================= FAIL =================
-    if (!lyrics) {
+    if (!result) {
         return sock.sendMessage(from, {
-            text:
-`❌ Lirik tidak ditemukan (sudah dicoba pintar)
-
-🔎 Query: ${query}
-
-💡 Tips:
-- tambah nama penyanyi
-- contoh: !lirik bahagia lagi piche`
+            text: "❌ Lagu tidak ditemukan di Genius"
         }, { quoted: msg });
     }
 
-    lyrics = lyrics
-        .replace(/\r/g, "")
-        .replace(/\n{3,}/g, "\n\n")
-        .trim();
+    console.log("[FOUND]:", result.title);
 
-    const header =
-`🎶 LIRIK DITEMUKAN
+    // 📄 ambil lirik
+    const lyrics = await scrapeLyrics(result.url);
+
+    if (!lyrics) {
+        return sock.sendMessage(from, {
+            text: "❌ Lirik tidak ditemukan"
+        }, { quoted: msg });
+    }
+
+    const text =
+`🎶 *${result.title}*
 ━━━━━━━━━━━━━━
-🔎 Query Asli : ${query}
-✅ Dipakai    : ${usedQuery}
-`;
+
+${lyrics}`;
 
     await sock.sendMessage(from, {
-        text: header + "\n" + lyrics
+        text
     }, { quoted: msg });
 
     await sock.sendMessage(from, {
