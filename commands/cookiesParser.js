@@ -1,8 +1,10 @@
 import fs from "fs";
+import path from "path";
 
 export function loadCookie(filePath) {
     try {
-        const raw = fs.readFileSync(filePath, "utf-8");
+        const fullPath = path.join(process.cwd(), filePath);
+        const raw = fs.readFileSync(fullPath, "utf-8");
 
         const cookies = raw
             .split("\n")
