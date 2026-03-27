@@ -777,12 +777,22 @@ setInterval(async () => {
     }
 
 }, 60000)
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Endpoint untuk QR
+// ROOT TEST
+app.get("/", (req, res) => {
+    res.send("✅ MR.A BOT API RUNNING 🚀");
+});
+
+// QR ENDPOINT
 app.get("/qr", async (req, res) => {
-    if (!qrGlobal) return res.send("❌ QR belum tersedia, bot mungkin sudah login.");
+    console.log("🔥 /qr diakses");
+
+    if (!qrGlobal) {
+        return res.send("❌ QR belum tersedia, bot mungkin sudah login.");
+    }
 
     try {
         const qrDataUrl = await qrcode.toDataURL(qrGlobal);
@@ -795,9 +805,11 @@ app.get("/qr", async (req, res) => {
     }
 });
 
-app.listen(PORT, () => {
-    console.log(`🌐 Server QR berjalan di port ${PORT}`);
+// LISTEN FIX
+app.listen(PORT, "0.0.0.0", () => {
+    console.log(`🌐 Server jalan di port ${PORT}`);
 });
+
 async function startBot() {
     await new Promise(r => setTimeout(r, 3000))
     const { state, saveCreds } = await useMultiFileAuthState("./baileys_auth");
