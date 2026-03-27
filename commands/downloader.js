@@ -3,7 +3,6 @@ import path from "path";
 import fs from "fs";
 import util from "util";
 import { getSenderRawId, resolveToMainId } from "../moduls/user.js";
-import lyricsFinder from "lyrics-finder";
 import axios from "axios";
 
 const execPromise = util.promisify(exec);
