@@ -7,21 +7,20 @@ function normalize(text) {
     return text.toLowerCase().replace(/[^a-z0-9\s]/g, "").trim();
 }
 
-// ================= AI CLEANER =================
-function aiCleanLyrics(raw) {
-    return raw
+// ================= CLEANER =================
+function cleanText(text) {
+    return text
         .replace(/<script[\s\S]*?<\/script>/gi, "")
         .replace(/<style[\s\S]*?<\/style>/gi, "")
         .replace(/window\..*?\n/g, "")
         .replace(/document\..*?\n/g, "")
-        .replace(/\{[\s\S]*?\}/g, "")
         .replace(/Advertisement|Embed|Share|Copy|Lyrics|Cookie|Privacy/gi, "")
         .replace(/©.*|All rights reserved.*/gi, "")
-        .replace(/\s{3,}/g, "\n")
+        .replace(/\n{3,}/g, "\n\n")
         .trim();
 }
 
-// ================= STRUCTURE DETECTOR =================
+// ================= STRUCTURE DETECTOR (FIXED) =================
 function detectStructure(lines) {
     const result = [];
     let buffer = [];
@@ -54,12 +53,8 @@ function detectStructure(lines) {
             continue;
         }
 
-        if (
-            l.includes("http") ||
-            l.includes("cookie") ||
-            l.includes("privacy") ||
-            l.length < 2
-        ) continue;
+        // ❌ FIX: jangan buang baris pendek (ini bikin lirik hilang)
+        if (l.includes("http") || l.includes("cookie") || l.includes("privacy")) continue;
 
         buffer.push(line);
     }
@@ -68,12 +63,12 @@ function detectStructure(lines) {
     return result;
 }
 
-// ================= FORMAT WA =================
+// ================= FORMAT WA (FIXED CLEAN) =================
 function formatWhatsAppAI(title, lyrics, url) {
     const lines = lyrics
         .split("\n")
         .map(l => l.trim())
-        .filter(Boolean);
+        .filter(l => l !== ""); // ❗ FIX PENTING
 
     const structured = detectStructure(lines);
 
@@ -81,7 +76,8 @@ function formatWhatsAppAI(title, lyrics, url) {
 `🎶 *LIRIK DITEMUKAN*
 ━━━━━━━━━━━━━━
 🎵 ${title}
-\n`;
+
+`;
 
     for (const block of structured) {
         if (
@@ -102,57 +98,58 @@ function formatWhatsAppAI(title, lyrics, url) {
     return output;
 }
 
-// ================= SCRAPER =================
+// ================= SCRAPER (FIX TOTAL STABIL) =================
 async function scrapeLyricsAI(url) {
     try {
         const { data } = await axios.get(url, {
-            headers: { "User-Agent": "Mozilla/5.0" }
+            headers: {
+                "User-Agent":
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+            },
+            timeout: 15000
         });
 
         const $ = cheerio.load(data);
+
         let text = "";
 
-        // ================= GENIUS (BEST SOURCE) =================
+        // ================= GENIUS =================
         if (url.includes("genius.com")) {
-            $('[data-lyrics-container="true"]').each((i, el) => {
+            $('[data-lyrics-container="true"]').each((_, el) => {
                 text += $(el).text() + "\n";
             });
         }
 
-        // ================= KAPANLAGI (FIXED TOTAL) =================
+        // ================= KAPANLAGI =================
         else if (url.includes("kapanlagi")) {
-
-            // 🔥 INI FIX UTAMA: ambil hanya container lirik
-            text = $("#lirik-main-content").text()
-                || $(".lyrics-body").text()
-                || $(".lirik-content").text();
-
+            text =
+                $("#lirik-main-content").text() ||
+                $(".lyrics-body").text() ||
+                $(".lirik-content").text();
         }
 
-        // ================= AZLYRICS (FIXED CLEAN) =================
+        // ================= AZLYRICS =================
         else if (url.includes("azlyrics")) {
+            const body = $("body").text();
+            text = body.split("if(typeof")[0];
+        }
 
-            // ambil hanya middle content (bukan semua div)
+        // ================= CLEAN =================
+        text = cleanText(text);
+
+        // ================= FALLBACK (IMPORTANT FIX) =================
+        if (!text || text.length < 80) {
             const bodyText = $("body").text();
 
-            // potong noise kasar
-            text = bodyText.split("if(typeof")[0]; // buang JS KapanLagi style
+            text = bodyText
+                .replace(/Advertisement|Cookie|Privacy|Login|Subscribe/gi, "")
+                .split("\n")
+                .map(l => l.trim())
+                .filter(l => l.length > 0) // ❗ FIX: jangan filter panjang
+                .join("\n");
         }
 
-        // ================= FINAL CLEAN =================
-        text = text
-            .replace(/<script[\s\S]*?<\/script>/gi, "")
-            .replace(/<style[\s\S]*?<\/style>/gi, "")
-            .replace(/if\s*\(typeof[\s\S]*$/gim, "")   // 🔥 FIX ERROR KAMU
-            .replace(/#tipsmodal[\s\S]*/gi, "")
-            .replace(/\.lyric-top-search[\s\S]*/gi, "")
-            .replace(/window\..*?\n/g, "")
-            .replace(/document\..*?\n/g, "")
-            .replace(/Advertisement|Embed|Share|Copy|Cookie|Privacy/gi, "")
-            .replace(/\s{3,}/g, "\n")
-            .trim();
-
-        if (text.length < 80) return null;
+        if (!text || text.length < 80) return null;
 
         return text;
 
@@ -161,16 +158,17 @@ async function scrapeLyricsAI(url) {
         return null;
     }
 }
-// ================= SEARCH =================
+
+// ================= SEARCH (FIXED PRIORITY) =================
 async function searchGoogle(query) {
     try {
         const sites = [
-            "kapanlagi.com",
             "genius.com",
+            "kapanlagi.com",
             "azlyrics.com"
         ];
 
-        const resultsAll = [];
+        let all = [];
 
         for (const site of sites) {
             const { data } = await axios.post(
@@ -187,23 +185,20 @@ async function searchGoogle(query) {
             );
 
             if (data.organic?.length) {
-                resultsAll.push(...data.organic);
+                all.push(...data.organic);
             }
         }
 
-        for (const r of resultsAll) {
-            const link = r.link;
+        const filtered = all.filter(r => {
+            const l = (r.link || "").toLowerCase();
+            return (
+                l.includes("genius.com") ||
+                l.includes("kapanlagi.com") ||
+                l.includes("azlyrics.com")
+            );
+        });
 
-            if (
-                link.includes("kapanlagi") ||
-                link.includes("genius") ||
-                link.includes("azlyrics")
-            ) {
-                return link;
-            }
-        }
-
-        return resultsAll[0]?.link || null;
+        return filtered[0]?.link || all[0]?.link || null;
 
     } catch (e) {
         console.log("[SEARCH ERROR]", e.message);
@@ -215,12 +210,18 @@ async function searchGoogle(query) {
 const CACHE_FILE = "./database/lirik_cache.json";
 
 function loadCache() {
-    if (!fs.existsSync(CACHE_FILE)) return {};
-    return JSON.parse(fs.readFileSync(CACHE_FILE));
+    try {
+        if (!fs.existsSync(CACHE_FILE)) return {};
+        return JSON.parse(fs.readFileSync(CACHE_FILE));
+    } catch {
+        return {};
+    }
 }
 
 function saveCache(cache) {
-    fs.writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2));
+    try {
+        fs.writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2));
+    } catch {}
 }
 
 // ================= MAIN BOT =================
@@ -262,14 +263,20 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
 
     if (!rawLyrics) {
         return sock.sendMessage(from, {
-            text: "❌ Lirik tidak ditemukan / tidak bisa diambil"
+            text:
+`❌ Lirik tidak ditemukan
+
+🔎 kemungkinan:
+- struktur website berubah
+- halaman tidak mengandung lirik
+- atau diblokir scraper`
         }, { quoted: msg });
     }
 
     // ================= FORMAT =================
     const result = formatWhatsAppAI(query, rawLyrics, url);
 
-    // ================= CACHE SAVE =================
+    // ================= CACHE =================
     cache[key] = result;
     saveCache(cache);
 
