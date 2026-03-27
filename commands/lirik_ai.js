@@ -14,24 +14,13 @@ function cleanLyrics(text) {
         .replace(/Embed|Share|Copy/gi, "")
         .replace(/\{.*?\}/g, "")
         .replace(/@context|schema\.org/gi, "")
-        .replace(/\[.*?\]/g, "") // hapus [Verse]
+        .replace(/\[.*?\]/g, "")
         .replace(/\s{2,}/g, " ")
         .replace(/\n{2,}/g, "\n\n")
         .trim();
 }
 
-// ================= UNIVERSAL FILTER =================
-function filterLines(text) {
-    return text
-        .split("\n")
-        .map(l => l.trim())
-        .filter(l =>
-            l.length > 3 &&
-            !l.match(/(http|www|function|var |let |const |return)/i) &&
-            !l.match(/(HOME|BERITA|VIDEO|IKLAN)/i)
-        )
-        .join("\n");
-}
+// ================= FORMAT LYRICS =================
 function formatLyrics(title, lyrics) {
     let lines = lyrics
         .split("\n")
@@ -40,16 +29,13 @@ function formatLyrics(title, lyrics) {
 
     let result = [];
 
-    // header
     result.push(`Lyrics of ${title}`);
     result.push("");
 
     let verseCount = 1;
 
-    for (let i = 0; i < lines.length; i++) {
-        let line = lines[i];
+    for (let line of lines) {
 
-        // deteksi chorus/verse dari pola umum (kalau tidak ada label asli)
         if (/chorus/i.test(line)) {
             result.push("chorus");
             continue;
@@ -60,13 +46,7 @@ function formatLyrics(title, lyrics) {
             continue;
         }
 
-        // heuristik: kalau baris panjang banget, anggap lanjutan lirik
-        if (line.length > 60) {
-            result.push(line);
-            continue;
-        }
-
-        // bikin grouping otomatis jadi verse kalau kosong atau awal
+        // auto verse grouping
         if (result.length === 2 || result[result.length - 1] === "") {
             result.push(`verse ${verseCount++}`);
         }
@@ -74,8 +54,11 @@ function formatLyrics(title, lyrics) {
         result.push(line);
     }
 
-    return result.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+    return result.join("\n")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
 }
+
 // ================= SCRAPER UTAMA =================
 async function scrapeLyrics(url) {
     try {
@@ -84,51 +67,80 @@ async function scrapeLyrics(url) {
         });
 
         const $ = cheerio.load(data);
-
         let lyrics = "";
 
-        // ================= 1. JSON SCHEMA =================
+        // ================= JSON SCHEMA =================
         const jsonMatch = data.match(/"lyrics":\s*{[^}]*"text":"([^"]+)"/);
         if (jsonMatch) {
-            lyrics = jsonMatch[1]
-                .replace(/\\n/g, "\n")
-                .replace(/([a-z])([A-Z])/g, "$1\n$2");
-            return cleanLyrics(lyrics);
+            return cleanLyrics(
+                jsonMatch[1]
+                    .replace(/\\n/g, "\n")
+                    .replace(/([a-z])([A-Z])/g, "$1\n$2")
+            );
         }
 
-        // ================= 2. SITE KHUSUS =================
-
-        // KapanLagi
+        // ================= KAPANLAGI =================
         if (url.includes("kapanlagi")) {
-            lyrics = $("#lirik-main-content").text();
+            lyrics = $("#lirik-main-content")
+                .html()
+                ?.replace(/<br\s*\/?>/gi, "\n")
+                .replace(/<\/p>/gi, "\n")
+                .replace(/<[^>]+>/g, "") || "";
         }
 
-        // Musixmatch
+        // ================= MUSIXMATCH =================
         else if (url.includes("musixmatch")) {
             $("span").each((i, el) => {
-                const t = $(el).text().trim();
-                if (t.length > 1) lyrics += t + "\n";
+                let t = $(el).html();
+                if (!t) return;
+
+                t = t
+                    .replace(/<br\s*\/?>/gi, "\n")
+                    .replace(/<[^>]+>/g, "")
+                    .trim();
+
+                lyrics += t + "\n";
             });
         }
 
-        // AZLyrics
+        // ================= AZLYRICS =================
         else if (url.includes("azlyrics")) {
-            lyrics = $("div.lyricsh").next().text();
+            lyrics = $("div.lyricsh")
+                .next()
+                .html()
+                ?.replace(/<br\s*\/?>/gi, "\n")
+                .replace(/<[^>]+>/g, "") || "";
         }
 
-        // Genius
+        // ================= GENIUS =================
         else if (url.includes("genius")) {
-            lyrics = $('[data-lyrics-container="true"]').text();
+            $('[data-lyrics-container="true"]').each((i, el) => {
+                let html = $(el).html();
+                if (!html) return;
+
+                lyrics += html
+                    .replace(/<br\s*\/?>/gi, "\n")
+                    .replace(/<\/div>/gi, "\n")
+                    .replace(/<[^>]+>/g, "") + "\n";
+            });
         }
 
-        // ================= 3. UNIVERSAL FALLBACK =================
+        // ================= UNIVERSAL FALLBACK =================
         if (!lyrics || lyrics.length < 50) {
             $("p, div").each((i, el) => {
-                const t = $(el).text().trim();
+                let html = $(el).html();
+                if (!html) return;
+
+                let t = html
+                    .replace(/<br\s*\/?>/gi, "\n")
+                    .replace(/<\/p>/gi, "\n")
+                    .replace(/<\/div>/gi, "\n")
+                    .replace(/<[^>]+>/g, "")
+                    .trim();
 
                 if (
                     t.length > 30 &&
-                    t.length < 500 &&
+                    t.length < 800 &&
                     !t.includes("http")
                 ) {
                     lyrics += t + "\n";
@@ -136,10 +148,13 @@ async function scrapeLyrics(url) {
             });
         }
 
-        lyrics = filterLines(lyrics);
-        lyrics = cleanLyrics(lyrics);
-
-        if (lyrics.length < 50) return null;
+        // ================= NORMALIZE OUTPUT =================
+        lyrics = lyrics
+            .replace(/\r/g, "")
+            .replace(/\n{3,}/g, "\n\n")
+            .replace(/([a-z])([A-Z])/g, "$1\n$2")
+            .replace(/\s+\n/g, "\n")
+            .trim();
 
         return lyrics;
 
@@ -149,7 +164,7 @@ async function scrapeLyrics(url) {
     }
 }
 
-// ================= SEARCH SERPER =================
+// ================= SEARCH =================
 async function searchGoogle(query) {
     try {
         const { data } = await axios.post(
@@ -174,7 +189,6 @@ async function searchGoogle(query) {
                 link.includes("azlyrics") ||
                 link.includes("genius")
             ) {
-                console.log("[URL FOUND]:", link);
                 return link;
             }
         }
@@ -210,8 +224,6 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
         }, { quoted: msg });
     }
 
-    console.log("[LIRIK RAW]:", query);
-
     await sock.sendMessage(from, {
         react: { text: "⏳", key: msg.key }
     });
@@ -219,15 +231,12 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
     const cache = loadCache();
     const key = normalize(query);
 
-    // ================= CACHE =================
     if (cache[key]) {
-        console.log("[CACHE HIT]");
         return sock.sendMessage(from, {
             text: cache[key]
         }, { quoted: msg });
     }
 
-    // ================= SEARCH =================
     const url = await searchGoogle(query);
 
     if (!url) {
@@ -236,20 +245,11 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
         }, { quoted: msg });
     }
 
-    // ================= SCRAPE =================
     let lyrics = await scrapeLyrics(url);
 
-    // ================= FAIL =================
     if (!lyrics) {
         return sock.sendMessage(from, {
-            text:
-`❌ Lirik tidak ditemukan
-
-🔎 Query: ${query}
-
-💡 Coba:
-- tambah artis
-- contoh: bahagia lagi piche kota`
+            text: `❌ Lirik tidak ditemukan\n\n🔎 Query: ${query}`
         }, { quoted: msg });
     }
 
@@ -261,7 +261,6 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
 
 ${formattedLyrics}`;
 
-    // ================= SAVE CACHE =================
     cache[key] = result;
     saveCache(cache);
 
