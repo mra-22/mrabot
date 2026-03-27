@@ -32,7 +32,50 @@ function filterLines(text) {
         )
         .join("\n");
 }
+function formatLyrics(title, lyrics) {
+    let lines = lyrics
+        .split("\n")
+        .map(l => l.trim())
+        .filter(Boolean);
 
+    let result = [];
+
+    // header
+    result.push(`Lyrics of ${title}`);
+    result.push("");
+
+    let verseCount = 1;
+
+    for (let i = 0; i < lines.length; i++) {
+        let line = lines[i];
+
+        // deteksi chorus/verse dari pola umum (kalau tidak ada label asli)
+        if (/chorus/i.test(line)) {
+            result.push("chorus");
+            continue;
+        }
+
+        if (/verse/i.test(line)) {
+            result.push("verse");
+            continue;
+        }
+
+        // heuristik: kalau baris panjang banget, anggap lanjutan lirik
+        if (line.length > 60) {
+            result.push(line);
+            continue;
+        }
+
+        // bikin grouping otomatis jadi verse kalau kosong atau awal
+        if (result.length === 2 || result[result.length - 1] === "") {
+            result.push(`verse ${verseCount++}`);
+        }
+
+        result.push(line);
+    }
+
+    return result.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
 // ================= SCRAPER UTAMA =================
 async function scrapeLyrics(url) {
     try {
@@ -210,12 +253,13 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
         }, { quoted: msg });
     }
 
+    const formattedLyrics = formatLyrics(query, lyrics);
+
     const result =
 `🎶 LIRIK DITEMUKAN
 ━━━━━━━━━━━━━━
-🎵 ${query}
 
-${lyrics}`;
+${formattedLyrics}`;
 
     // ================= SAVE CACHE =================
     cache[key] = result;
