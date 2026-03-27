@@ -1,11 +1,11 @@
 import fs from "fs";
-import path from "path";
-import lyricsFinder from "lyrics-finder";
 import axios from "axios";
+import lyricsFinder from "lyrics-finder";
 
-// ================= CACHE =================
+// ================= CONFIG =================
 const CACHE_FILE = "./database/lirik_cache.json";
 
+// ================= LOAD CACHE =================
 function loadCache() {
     if (!fs.existsSync(CACHE_FILE)) return {};
     return JSON.parse(fs.readFileSync(CACHE_FILE));
@@ -34,43 +34,45 @@ function normalize(text) {
         .trim();
 }
 
-// ================= SIMILARITY =================
-function similarity(a, b) {
-    const s1 = normalize(a);
-    const s2 = normalize(b);
+// ================= SERPER SEARCH =================
+async function searchSongSmart(query) {
+    try {
+        const { data } = await axios.post(
+            "https://google.serper.dev/search",
+            {
+                q: query + " lagu",
+            },
+            {
+                headers: {
+                    "X-API-KEY": process.env.SERPER_API_KEY,
+                    "Content-Type": "application/json",
+                },
+            }
+        );
 
-    if (s1 === s2) return 1;
+        const results = data.organic || [];
 
-    let matches = 0;
-    for (let char of s1) {
-        if (s2.includes(char)) matches++;
-    }
+        for (const r of results) {
+            const title = r.title.toLowerCase();
 
-    return matches / Math.max(s1.length, s2.length);
-}
+            if (
+                title.includes("lirik") ||
+                title.includes("lyrics") ||
+                title.includes("-")
+            ) {
+                console.log("[SERPER FOUND]:", r.title);
 
-// ================= SMART DETECT =================
-function smartDetect(query) {
-    const q = normalize(query);
-
-    // exact match DB
-    if (DB_LAGU[q]) return DB_LAGU[q];
-
-    // fuzzy match DB
-    let best = null;
-    let score = 0;
-
-    for (const key in DB_LAGU) {
-        const sim = similarity(q, key);
-        if (sim > score) {
-            score = sim;
-            best = DB_LAGU[key];
+                return r.title
+                    .replace(/lirik|lyrics/gi, "")
+                    .trim();
+            }
         }
+
+        return query;
+    } catch (e) {
+        console.log("[SERPER ERROR]", e.message);
+        return query;
     }
-
-    if (score > 0.5) return best;
-
-    return query;
 }
 
 // ================= API FALLBACK =================
@@ -81,7 +83,6 @@ async function lyricsAPI(query) {
         const title = parts.slice(1).join(" ");
 
         const url = `https://api.lyrics.ovh/v1/${artist}/${title}`;
-
         const { data } = await axios.get(url);
 
         return data?.lyrics || null;
@@ -107,7 +108,7 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
         react: { text: "⏳", key: msg.key }
     });
 
-    // ================= LOAD CACHE =================
+    // ================= CACHE =================
     const cache = loadCache();
     const key = normalize(query);
 
@@ -118,10 +119,19 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
         }, { quoted: msg });
     }
 
-    // ================= SMART QUERY =================
-    const smartQuery = smartDetect(query);
+    let smartQuery = query;
 
-    console.log("[SMART]:", smartQuery);
+    // ================= 1. DB LOKAL =================
+    if (DB_LAGU[key]) {
+        smartQuery = DB_LAGU[key];
+        console.log("[DB MATCH]:", smartQuery);
+    }
+
+    // ================= 2. SERPER =================
+    else {
+        smartQuery = await searchSongSmart(query);
+        console.log("[SMART RESULT]:", smartQuery);
+    }
 
     let lyrics = null;
 
