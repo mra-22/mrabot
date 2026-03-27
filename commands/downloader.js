@@ -265,14 +265,13 @@ export async function play(sock, msg, from, sender, cmd, args) {
         const uploader = uploaderMatch ? uploaderMatch[1].trim() : "-";
         const duration = durationMatch ? parseInt(durationMatch[1]) : 0;
 
-        // 🎨 CAPTION
         const caption = `╭━━━〔 🎵 PLAY MUSIC 〕━━━⬣
 ┃ 🎧 Judul   : ${title}
 ┃ 📺 Channel : ${uploader}
 ┃ ⏱️ Durasi  : ${formatDuration(duration)}
 ╰━━━━━━━━━━━━━━━━⬣`;
 
-        // 📸 KIRIM THUMBNAIL
+        // 📸 thumbnail
         if (thumbnail) {
             await sock.sendMessage(from, {
                 image: { url: thumbnail },
@@ -282,7 +281,7 @@ export async function play(sock, msg, from, sender, cmd, args) {
             await sock.sendMessage(from, { text: caption }, { quoted: msg });
         }
 
-        // 🎧 KIRIM AUDIO JIKA ADA
+        // 🎧 kirim audio lokal
         if (mp3Match) {
             const path = mp3Match[1].trim();
 
@@ -301,31 +300,61 @@ export async function play(sock, msg, from, sender, cmd, args) {
         }
 
     } catch (e) {
-        console.log("❌ yt-dlp gagal");
+        console.log("❌ yt-dlp gagal:", e.message);
     }
 
-    // 🔥 FALLBACK AUDIO
+    // ==============================
+    // 🔥 MULTI FALLBACK API
+    // ==============================
     if (!success && videoUrl) {
-        try {
-            const res = await fetch(
-                `https://ytdl-api.caliphdev.com/download/audio?url=${encodeURIComponent(videoUrl)}`
-            );
 
-            const json = await res.json();
-
-            if (json.result?.download_url) {
-                await sock.sendMessage(from, {
-                    audio: { url: json.result.download_url },
-                    mimetype: "audio/mpeg"
-                }, { quoted: msg });
-
-                success = true;
+        const apis = [
+            async () => {
+                const res = await fetch(`https://ytdl-api.caliphdev.com/download/audio?url=${encodeURIComponent(videoUrl)}`);
+                const json = await res.json();
+                return json.result?.download_url;
+            },
+            async () => {
+                return `https://api.vevioz.com/api/button/mp3/${encodeURIComponent(videoUrl)}`;
+            },
+            async () => {
+                const res = await fetch("https://api.cobalt.tools/api/json", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        url: videoUrl,
+                        vCodec: "h264",
+                        vQuality: "720"
+                    })
+                });
+                const json = await res.json();
+                return json.url;
             }
-        } catch (e) {
-            console.log("❌ fallback gagal");
+        ];
+
+        for (let apiFunc of apis) {
+            try {
+                const url = await apiFunc();
+
+                if (url) {
+                    await sock.sendMessage(from, {
+                        audio: { url },
+                        mimetype: "audio/mpeg"
+                    }, { quoted: msg });
+
+                    success = true;
+                    break;
+                }
+
+            } catch (e) {
+                console.log("❌ fallback error:", e.message);
+            }
         }
     }
 
+    // ==============================
+    // ❌ FINAL FAIL
+    // ==============================
     if (!success && videoUrl) {
         await sock.sendMessage(from, {
             text: `🎧 Tidak bisa kirim audio.\n${videoUrl}`
