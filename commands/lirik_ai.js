@@ -1,118 +1,91 @@
-
 import axios from "axios";
 import * as cheerio from "cheerio";
 
-// ================= SIMPLE CACHE =================
-const cache = new Map();
-
-// ================= NORMALIZER =================
 function normalize(q) {
     return q
         .toLowerCase()
-        .replace(/official|lyrics|lirik|video|audio|noah|mv/g, "")
-        .replace(/\s+/g, " ")
+        .replace(/official|lyrics|lirik|video|audio|mv/g, "")
         .trim();
 }
 
-// ================= FUZZY SCORE =================
-function similarity(a, b) {
-    if (!a || !b) return 0;
-
-    const aWords = a.split(" ");
-    const bWords = b.split(" ");
-
-    let match = 0;
-
-    for (let w of aWords) {
-        if (bWords.includes(w)) match++;
-    }
-
-    return match / Math.max(aWords.length, bWords.length);
-}
-
-// ================= DUCKDUCKGO SCRAPER =================
-async function searchLyrics(q) {
+// ================= MUSIXMATCH SCRAPER =================
+async function musixmatchSearch(query) {
     try {
-        console.log("[SEARCH] DDG:", q);
+        const url = `https://www.musixmatch.com/search/${encodeURIComponent(query)}`;
 
-        const { data } = await axios.get(
-            `https://duckduckgo.com/html/?q=${encodeURIComponent(q + " lyrics")}`,
-            {
-                headers: {
-                    "User-Agent":
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120"
-                }
-            }
-        );
-
-        const $ = cheerio.load(data);
-
-        let links = [];
-
-        $("a.result__a").each((i, el) => {
-            const href = $(el).attr("href");
-            if (href && href.startsWith("http")) {
-                links.push(href);
+        const { data } = await axios.get(url, {
+            headers: {
+                "User-Agent": "Mozilla/5.0"
             }
         });
 
-        if (!links.length) return null;
+        const $ = cheerio.load(data);
 
-        // ambil link pertama saja (stabil)
-        const link = links[0];
+        const link = $("a.title").attr("href");
 
-        console.log("[FOUND LINK]:", link);
+        if (!link) return null;
 
-        const page = await axios.get(link, {
-            headers: {
-                "User-Agent":
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120"
-            }
+        const songUrl = "https://www.musixmatch.com" + link;
+
+        const page = await axios.get(songUrl, {
+            headers: { "User-Agent": "Mozilla/5.0" }
         });
 
         const $$ = cheerio.load(page.data);
 
         let lyrics = "";
 
-        $$("p, div").each((i, el) => {
-            const text = $$(el).text();
-            if (text && text.length > 40) {
-                lyrics += text + "\n";
-            }
+        $$("span").each((i, el) => {
+            const t = $$(el).text();
+            if (t.length > 2) lyrics += t + "\n";
         });
 
         return lyrics.trim() || null;
 
-    } catch (err) {
-        console.log("[SEARCH ERROR]:", err.message);
+    } catch (e) {
         return null;
     }
 }
 
-// ================= LYRICS OVH =================
-async function lyricsOVH(a, t) {
+// ================= AZLYRICS FALLBACK =================
+async function azlyricsSearch(query) {
     try {
-        const res = await axios.get(
-            `https://api.lyrics.ovh/v1/${encodeURIComponent(a || "")}/${encodeURIComponent(t)}`
-        );
-        return res.data?.lyrics || null;
+        const url = `https://search.azlyrics.com/search.php?q=${encodeURIComponent(query)}`;
+
+        const { data } = await axios.get(url, {
+            headers: { "User-Agent": "Mozilla/5.0" }
+        });
+
+        const $ = cheerio.load(data);
+
+        const link = $("td a").attr("href");
+
+        if (!link) return null;
+
+        const page = await axios.get(link, {
+            headers: { "User-Agent": "Mozilla/5.0" }
+        });
+
+        const $$ = cheerio.load(page.data);
+
+        let lyrics = $$("div.lyricsh").next().text();
+
+        return lyrics || null;
+
     } catch {
         return null;
     }
 }
 
-// ================= MAIN EXPORT =================
-export async function lirik(sock, msg, from, sender, cmd, args) {
-    if (!Array.isArray(args)) args = [];
+// ================= MAIN =================
+export async function lirik(sock, msg, from, args) {
+    const query = args.join(" ").trim();
 
-    const rawQuery = args.join(" ").trim();
+    console.log("[LIRIK RAW]:", query);
 
-    console.log("\n==============================");
-    console.log("[LIRIK RAW]:", rawQuery);
-
-    if (!rawQuery) {
+    if (!query) {
         return sock.sendMessage(from, {
-            text: "❗ Contoh:\n*!lirik noah separuh aku*"
+            text: "Ketik: !lirik noah separuh aku"
         }, { quoted: msg });
     }
 
@@ -120,129 +93,52 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
         react: { text: "⏳", key: msg.key }
     });
 
-    let success = false;
+    let lyrics = null;
 
-    try {
-        // ================= CACHE =================
-        if (cache.has(rawQuery)) {
-            console.log("[CACHE HIT]");
-            return sock.sendMessage(from, {
-                text: cache.get(rawQuery)
-            }, { quoted: msg });
-        }
+    const q = normalize(query);
 
-        let query = normalize(rawQuery);
+    console.log("[NORMALIZED]:", q);
 
-        console.log("[NORMALIZED]:", query);
+    // ================= TRY 1: MUSIXMATCH =================
+    console.log("[TRY] Musixmatch");
+    lyrics = await musixmatchSearch(q);
 
-        let artist = "";
-        let title = "";
+    // ================= TRY 2: AZLYRICS =================
+    if (!lyrics) {
+        console.log("[TRY] AZLyrics");
+        lyrics = await azlyricsSearch(q);
+    }
 
-        if (query.includes("-")) {
-            [artist, title] = query.split("-").map(v => v.trim());
-        } else {
-            title = query;
-        }
-
-        console.log("[TITLE]:", title);
-        console.log("[ARTIST]:", artist);
-
-        // ================= MULTI SEARCH (AI STYLE) =================
-        let candidates = [
-            `${artist} ${title}`,
-            `${title} ${artist}`,
-            title,
-            rawQuery
-        ];
-
-        let lyrics = null;
-
-        let bestScore = 0;
-        let bestLyrics = null;
-
-        for (let q of candidates) {
-            let result = await searchLyrics(q);
-
-            if (result) {
-                const score = similarity(q, title + " " + artist);
-
-                console.log("[SCORE]:", score, "FOR:", q);
-
-                if (score >= bestScore) {
-                    bestScore = score;
-                    bestLyrics = result;
-                }
-            }
-        }
-
-        lyrics = bestLyrics;
-
-        // ================= FALLBACK =================
-        if (!lyrics) {
-            console.log("[FALLBACK] lyrics.ovh");
-            lyrics = await lyricsOVH(artist, title);
-        }
-
-        // ================= FAIL =================
-        if (!lyrics) {
-            console.log("[FAILED] NO LYRICS");
-
-            return sock.sendMessage(from, {
-                text:
+    // ================= FAIL =================
+    if (!lyrics) {
+        return sock.sendMessage(from, {
+            text:
 `❌ Lirik tidak ditemukan
 
-🔎 Debug:
-- Raw: ${rawQuery}
-- Normal: ${query}
+🔎 Query: ${query}
 
-💡 Coba:
-*!lirik separuh aku noah*`
-            }, { quoted: msg });
-        }
-
-        // ================= CLEAN =================
-        lyrics = lyrics
-            .replace(/\r/g, "")
-            .replace(/\n{3,}/g, "\n\n")
-            .trim();
-
-        const header =
-`🎶 *LIRIK DITEMUKAN (AI MODE)*
-
-🎵 ${title}
-👤 ${artist}
-━━━━━━━━━━━━━━━━━━\n`;
-
-        // ================= CACHE SAVE =================
-        cache.set(rawQuery, header + lyrics);
-
-        // ================= CHUNK =================
-        const max = 3800;
-        let parts = [];
-
-        for (let i = 0; i < lyrics.length; i += max) {
-            parts.push(lyrics.slice(i, i + max));
-        }
-
-        for (let i = 0; i < parts.length; i++) {
-            await sock.sendMessage(from, {
-                text: i === 0 ? header + parts[i] : parts[i]
-            }, { quoted: i === 0 ? msg : null });
-        }
-
-        success = true;
-
-        console.log("[SUCCESS] SENT");
-
-    } catch (err) {
-        console.log("[GLOBAL ERROR]:", err);
-
-        await sock.sendMessage(from, {
-            text: "❌ Error internal (cek logs Railway)"
+💡 Tips:
+- coba: separuh aku noah
+- atau: noah separuh aku`
         }, { quoted: msg });
     }
 
+    lyrics = lyrics
+        .replace(/\r/g, "")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+
+    const header =
+`🎶 LIRIK DITEMUKAN
+━━━━━━━━━━━━━━
+🎵 ${query}
+`;
+
     await sock.sendMessage(from, {
-        react: { text: success ? "🔥" : "❌", key: msg.key }
+        text: header + "\n" + lyrics
+    }, { quoted: msg });
+
+    await sock.sendMessage(from, {
+        react: { text: "🔥", key: msg.key }
     });
 }
