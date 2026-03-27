@@ -31,6 +31,11 @@ function cleanLyrics(text) {
         .replace(/\[.*?\]/g, "")
         .replace(/\s{2,}/g, " ")
         .replace(/\n{2,}/g, "\n\n")
+        .replace(/Performance Cookies/gi, "")
+        .replace(/Targeting Cookies/gi, "")
+        .replace(/Consent/gi, "")
+        .replace(/checkbox label/gi, "")
+        .replace(/Leg\.Interest/gi, "")
         .trim();
 }
 
@@ -41,7 +46,14 @@ function filterLines(text) {
         .map(l => l.trim())
         .filter(l =>
             l.length > 3 &&
+
+            // ❌ buang sampah musixmatch
+            !l.match(/(cookie|consent|label|privacy|terms|leg\.interest)/i) &&
+
+            // ❌ buang web junk
             !l.match(/(http|www|function|var |let |const |return)/i) &&
+
+            // ❌ buang menu web indo
             !l.match(/(HOME|BERITA|VIDEO|IKLAN)/i)
         )
         .join("\n");
@@ -128,16 +140,26 @@ async function scrapeMusixmatch(url) {
         });
 
         // ambil semua teks
-        const lyrics = await page.evaluate(() => {
+       const lyrics = await page.evaluate(() => {
             let text = "";
-
-            document.querySelectorAll("div[class*=Lyrics__Container], span").forEach(el => {
+        
+            // ✅ fokus ke container lirik asli musixmatch
+            const containers = document.querySelectorAll(
+                "div[class*='Lyrics__Container'] p, div[class*='Lyrics__Container'] span"
+            );
+        
+            containers.forEach(el => {
                 const t = el.innerText?.trim();
-                if (t && t.length > 1) {
+        
+                if (
+                    t &&
+                    t.length > 2 &&
+                    !t.match(/cookie|consent|label|advert|privacy|terms/i)
+                ) {
                     text += t + "\n";
                 }
             });
-
+        
             return text;
         });
 
