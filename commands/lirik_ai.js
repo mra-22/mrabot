@@ -21,6 +21,49 @@ function normalize(text) {
     return text.toLowerCase().replace(/[^a-z0-9\s]/g, "").trim();
 }
 
+function formatLyricsWA(lyrics, title, artist) {
+
+    // ================= FIX BARIS NYATU =================
+    lyrics = lyrics
+        .replace(/([a-z])([A-Z])/g, "$1\n$2") // huruf kecil ke besar
+        .replace(/([a-z])([0-9])/g, "$1\n$2")
+        .replace(/\./g, ".\n")
+        .replace(/,/g, ",\n");
+
+    // ================= SPLIT =================
+    let lines = lyrics.split("\n")
+        .map(l => l.trim())
+        .filter(l => l.length > 0);
+
+    // ================= BENTUK BAIT =================
+    let result = "";
+    let bait = [];
+
+    for (let i = 0; i < lines.length; i++) {
+        bait.push(lines[i]);
+
+        // tiap 4 baris = 1 bait
+        if (bait.length === 4) {
+            result += bait.join("\n") + "\n\n";
+            bait = [];
+        }
+    }
+
+    // sisa baris
+    if (bait.length > 0) {
+        result += bait.join("\n") + "\n\n";
+    }
+
+    // ================= HEADER ESTETIK =================
+    return `🎶 *${title || "Lirik Lagu"}*
+━━━━━━━━━━━━━━
+🎤 ${artist || "-"}
+
+${result.trim()}
+━━━━━━━━━━━━━━
+✨ Powered by Bot`;
+}
+
 // ================= CLEAN =================
 function cleanLyrics(text) {
     return text
@@ -267,12 +310,11 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
         }, { quoted: msg });
     }
 
-    const result =
-`🎶 LIRIK DITEMUKAN
-━━━━━━━━━━━━━━
-🎵 ${query}
-
-${lyrics}`;
+    const result = formatLyricsWA(
+        lyrics,
+        query,
+        detected?.artist || ""
+    );
 
     // ================= SAVE CACHE =================
     cache[key] = result;
