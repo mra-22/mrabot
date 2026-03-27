@@ -2,124 +2,115 @@ import sys
 import os
 import re
 import subprocess
-import json
 from yt_dlp import YoutubeDL
 
-# ===================== VALIDASI INPUT =====================
+# ===================== VALIDASI =====================
 if len(sys.argv) < 2:
-    print("[DOWNLOAD ERROR] Judul lagu tidak diberikan", file=sys.stderr)
+    print("::ERROR::Query kosong", flush=True)
     sys.exit(1)
 
 query = " ".join(sys.argv[1:])
-search_keyword = f"ytsearch5:{query}"
+search = f"ytsearch1:{query}"
 
-output_dir = "audios"
+output_dir = "./audios"  # 🔥 ganti dari /tmp biar aman di Windows/Linux
 os.makedirs(output_dir, exist_ok=True)
 
+video_url = None
+title = query
+video = {}
 
 # ===================== HELPER =====================
-def sanitize_filename(name):
-    return re.sub(r"[^a-zA-Z0-9]", "_", name).strip("_").lower()
+def safe_filename(name):
+    return re.sub(r'[\\/*?:"<>|]', "", name)
 
 
-def convert_to_mp3(input_path):
-    output_path = os.path.splitext(input_path)[0] + ".mp3"
-
-    try:
-        subprocess.run(
-            [
-                "ffmpeg",
-                "-y",
-                "-i",
-                input_path,
-                "-vn",
-                "-acodec",
-                "libmp3lame",
-                "-b:a",
-                "128k",
-                output_path,
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=True,
-        )
-
-        if os.path.exists(output_path):
-            os.remove(input_path)
-            return output_path
-
-    except Exception as e:
-        print(f"[FFMPEG ERROR] {e}", file=sys.stderr)
-
-    return None
-
-
-# ===================== MAIN =====================
 try:
-    cookies_file = "cookiesyt.txt"
-
-    # 🔍 SEARCH VIDEO
-    ydl_opts_info = {
+    # ===================== SEARCH =====================
+    with YoutubeDL({
         "quiet": True,
         "skip_download": True,
         "noplaylist": True,
-        "default_search": "ytsearch",
         "nocheckcertificate": True,
         "geo_bypass": True,
         "extractor_args": {"youtube": {"player_client": ["android"]}},
-    }
+    }) as ydl:
 
-    if os.path.exists(cookies_file):
-        ydl_opts_info["cookiefile"] = cookies_file
+        info = ydl.extract_info(search, download=False)
 
-    with YoutubeDL(ydl_opts_info) as ydl:
-        search_result = ydl.extract_info(search_keyword, download=False)
+        if not info or "entries" not in info or not info["entries"]:
+            raise Exception("Video tidak ditemukan")
 
-        entries = search_result.get("entries", [])
-        if not entries:
-            raise Exception("Tidak ada video ditemukan")
+        video = info["entries"][0]
 
-        video_info = entries[0]
+        video_url = video.get("webpage_url", "")
+        title = video.get("title", query)
 
-        video_url = video_info["webpage_url"]
-        title = sanitize_filename(video_info.get("title", "audio"))
-        output_path = os.path.join(output_dir, f"{title}.mp4")
+    # ===================== DOWNLOAD =====================
+    safe_title = safe_filename(title)
+    output_template = f"{output_dir}/{safe_title}.%(ext)s"
 
-    # ⬇️ DOWNLOAD AUDIO (BEST)
-    ydl_opts_download = {
-        "format": "bestaudio/best",
+    ydl_opts = {
         "quiet": True,
-        "outtmpl": output_path,
+        "format": "bestaudio/best",
+        "outtmpl": output_template,
         "noplaylist": True,
         "nocheckcertificate": True,
         "geo_bypass": True,
-        "extractor_args": {"youtube": {"player_client": ["android"]}},
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "web_creator"]
+            }
+        },
+        "http_headers": {
+            "User-Agent": "com.google.android.youtube/19.09.37"
+        }
     }
 
-    if os.path.exists(cookies_file):
-        ydl_opts_download["cookiefile"] = cookies_file
+    with YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(video_url, download=True)
+        filepath = ydl.prepare_filename(info)
 
-    with YoutubeDL(ydl_opts_download) as ydl2:
-        ydl2.download([video_url])
+    if not os.path.exists(filepath):
+        raise Exception("File tidak ditemukan setelah download")
 
-    if not os.path.exists(output_path):
-        raise Exception("File video tidak ditemukan setelah download")
+    # ===================== CONVERT =====================
+    base, _ = os.path.splitext(filepath)
+    mp3_path = base + ".mp3"
 
-    # 🔄 CONVERT KE MP3
-    mp3_path = convert_to_mp3(output_path)
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-i", filepath,
+            "-vn",
+            "-acodec", "libmp3lame",
+            "-b:a", "128k",
+            mp3_path
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
 
-    if not mp3_path or not os.path.exists(mp3_path):
-        raise Exception("Gagal konversi ke MP3")
+    # ===================== VALIDASI HASIL =====================
+    if not os.path.exists(mp3_path):
+        raise Exception("Convert gagal (ffmpeg error)")
+
+    # hapus file video
+    try:
+        os.remove(filepath)
+    except:
+        pass
 
     # ===================== OUTPUT KE NODE =====================
-    print(f"::SUCCESS::{mp3_path}")
-    print(f"::TITLE::{video_info.get('title','-')}")
-    print(f"::URL::{video_url}")
-    print(f"::THUMB::{video_info.get('thumbnail','')}")
-    print(f"::UPLOADER::{video_info.get('uploader','-')}")
-    print(f"::DURATION::{video_info.get('duration',0)}")
+    print(f"::SUCCESS::{mp3_path}", flush=True)
 
-# ===================== ERROR =====================
 except Exception as e:
-    print(f"[DOWNLOAD ERROR] {e}", file=sys.stderr)
-    sys.exit(1)
+    print(f"::ERROR::{str(e)}", flush=True)
+
+# ===================== INFO (WAJIB KIRIM) =====================
+if video_url:
+    print(f"::TITLE::{title}", flush=True)
+    print(f"::URL::{video_url}", flush=True)
+    print(f"::THUMB::{video.get('thumbnail','')}", flush=True)
+    print(f"::UPLOADER::{video.get('uploader','-')}", flush=True)
+    print(f"::DURATION::{video.get('duration',0)}", flush=True)
