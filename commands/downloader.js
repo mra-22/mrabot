@@ -230,6 +230,20 @@ export async function downloaderCommand({ sock, msg, from, text }) {
 /* ============================================================
    ===============         PLAY MUSIC        ==================
    ============================================================*/
+async function searchYoutube(query) {
+    try {
+        const res = await fetch(`https://ytsearch-api.onrender.com/search?q=${encodeURIComponent(query)}`);
+        const json = await res.json();
+
+        if (!json || !json.data || !json.data.length) return null;
+
+        return json.data[0];
+    } catch {
+        return null;
+    }
+}
+
+// ===================== MAIN PLAY =====================
 export async function play(sock, msg, from, sender, cmd, args) {
     if (!Array.isArray(args)) args = [];
     const query = args.join(" ");
@@ -245,43 +259,55 @@ export async function play(sock, msg, from, sender, cmd, args) {
     let success = false;
     let videoUrl = null;
 
+    // ==============================
+    // 🔍 STEP 1: SEARCH
+    // ==============================
+    const result = await searchYoutube(query);
+
+    if (!result) {
+        await sock.sendMessage(from, {
+            text: "❌ Lagu tidak ditemukan"
+        }, { quoted: msg });
+
+        return;
+    }
+
+    const title = result.title;
+    videoUrl = result.url;
+    const thumbnail = result.thumbnail;
+    const uploader = result.author?.name || "-";
+
+    // durasi bisa string "4:12"
+    const duration = result.timestamp || "0:00";
+
+    const caption = `╭━━━〔 🎵 PLAY MUSIC 〕━━━⬣
+┃ 🎧 Judul   : ${title}
+┃ 📺 Channel : ${uploader}
+┃ ⏱️ Durasi  : ${duration}
+╰━━━━━━━━━━━━━━━━⬣`;
+
+    // kirim thumbnail dulu
+    if (thumbnail) {
+        await sock.sendMessage(from, {
+            image: { url: thumbnail },
+            caption
+        }, { quoted: msg });
+    } else {
+        await sock.sendMessage(from, { text: caption }, { quoted: msg });
+    }
+
+    // ==============================
+    // ⬇️ STEP 2: DOWNLOAD VIA PYTHON
+    // ==============================
     try {
         const { stdout } = await execPromise(
-            `python3 ./moduls/downloader_lagu.py "${query}"`
+            `python3 ./moduls/downloader_lagu.py "${videoUrl}"`
         );
 
         console.log(stdout);
 
         const mp3Match = stdout.match(/::SUCCESS::(.+)/);
-        const titleMatch = stdout.match(/::TITLE::(.+)/);
-        const urlMatch = stdout.match(/::URL::(.+)/);
-        const thumbMatch = stdout.match(/::THUMB::(.+)/);
-        const uploaderMatch = stdout.match(/::UPLOADER::(.+)/);
-        const durationMatch = stdout.match(/::DURATION::(.+)/);
 
-        const title = titleMatch ? titleMatch[1].trim() : query;
-        videoUrl = urlMatch ? urlMatch[1].trim() : null;
-        const thumbnail = thumbMatch ? thumbMatch[1].trim() : null;
-        const uploader = uploaderMatch ? uploaderMatch[1].trim() : "-";
-        const duration = durationMatch ? parseInt(durationMatch[1]) : 0;
-
-        const caption = `╭━━━〔 🎵 PLAY MUSIC 〕━━━⬣
-┃ 🎧 Judul   : ${title}
-┃ 📺 Channel : ${uploader}
-┃ ⏱️ Durasi  : ${formatDuration(duration)}
-╰━━━━━━━━━━━━━━━━⬣`;
-
-        // thumbnail dulu
-        if (thumbnail) {
-            await sock.sendMessage(from, {
-                image: { url: thumbnail },
-                caption
-            }, { quoted: msg });
-        } else {
-            await sock.sendMessage(from, { text: caption }, { quoted: msg });
-        }
-
-        // audio lokal
         if (mp3Match) {
             const path = mp3Match[1].trim();
 
@@ -298,11 +324,11 @@ export async function play(sock, msg, from, sender, cmd, args) {
         }
 
     } catch (e) {
-        console.log("❌ python gagal:", e.message);
+        console.log("❌ yt-dlp gagal:", e.message);
     }
 
     // ==============================
-    // 🔥 SUPER FALLBACK (3 API + retry)
+    // 🔥 STEP 3: MULTI FALLBACK
     // ==============================
     if (!success && videoUrl) {
 
@@ -328,7 +354,7 @@ export async function play(sock, msg, from, sender, cmd, args) {
 
         for (let i = 0; i < apis.length; i++) {
             try {
-                console.log(`🔄 coba fallback ${i + 1}`);
+                console.log(`🔄 fallback ${i + 1}`);
 
                 const url = await apis[i]();
 
