@@ -1,115 +1,91 @@
+import fs from "fs";
+import path from "path";
+import lyricsFinder from "lyrics-finder";
 import axios from "axios";
-import * as cheerio from "cheerio";
 
-const GENIUS_TOKEN = process.env.GENIUS_TOKEN;
+// ================= CACHE =================
+const CACHE_FILE = "./database/lirik_cache.json";
+
+function loadCache() {
+    if (!fs.existsSync(CACHE_FILE)) return {};
+    return JSON.parse(fs.readFileSync(CACHE_FILE));
+}
+
+function saveCache(cache) {
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2));
+}
+
+// ================= DATABASE LAGU INDO =================
+const DB_LAGU = {
+    "bahagia lagi": "Piche Kota Bahagia Lagi",
+    "komang": "Raim Laode Komang",
+    "hati hati di jalan": "Tulus Hati Hati Di Jalan",
+    "melukis senja": "Budi Doremi Melukis Senja",
+    "sial": "Mahalini Sial",
+    "tak ingin usai": "Keisya Levronka Tak Ingin Usai",
+};
 
 // ================= NORMALIZE =================
 function normalize(text) {
     return text
         .toLowerCase()
+        .replace(/official|lyrics|lirik|video|audio|mv/g, "")
         .replace(/[^a-z0-9\s]/g, "")
         .trim();
 }
 
 // ================= SIMILARITY =================
-function scoreMatch(query, title, artist) {
-    query = normalize(query);
-    title = normalize(title);
-    artist = normalize(artist);
+function similarity(a, b) {
+    const s1 = normalize(a);
+    const s2 = normalize(b);
 
+    if (s1 === s2) return 1;
+
+    let matches = 0;
+    for (let char of s1) {
+        if (s2.includes(char)) matches++;
+    }
+
+    return matches / Math.max(s1.length, s2.length);
+}
+
+// ================= SMART DETECT =================
+function smartDetect(query) {
+    const q = normalize(query);
+
+    // exact match DB
+    if (DB_LAGU[q]) return DB_LAGU[q];
+
+    // fuzzy match DB
+    let best = null;
     let score = 0;
 
-    const words = query.split(" ");
-
-    words.forEach(w => {
-        if (title.includes(w)) score += 3;
-        if (artist.includes(w)) score += 2;
-    });
-
-    // 🔥 bonus artis indo populer
-    const indoArtists = [
-        "piche kota",
-        "noah",
-        "hindia",
-        "juicy luicy",
-        "armada",
-        "mahalini",
-        "rizky febian"
-    ];
-
-    indoArtists.forEach(a => {
-        if (artist.includes(a)) score += 2;
-    });
-
-    return score;
-}
-
-// ================= SEARCH GENIUS =================
-async function searchGeniusSmart(query) {
-    try {
-        const res = await axios.get("https://api.genius.com/search", {
-            headers: {
-                Authorization: `Bearer ${GENIUS_TOKEN}`
-            },
-            params: { q: query }
-        });
-
-        const hits = res.data.response.hits;
-
-        if (!hits.length) return null;
-
-        let best = null;
-        let bestScore = 0;
-
-        for (let h of hits.slice(0, 10)) {
-            const title = h.result.title;
-            const artist = h.result.primary_artist.name;
-
-            const score = scoreMatch(query, title, artist);
-
-            console.log(`[CANDIDATE] ${artist} - ${title} | score=${score}`);
-
-            if (score > bestScore) {
-                bestScore = score;
-                best = {
-                    title: h.result.full_title,
-                    url: h.result.url,
-                    artist,
-                };
-            }
+    for (const key in DB_LAGU) {
+        const sim = similarity(q, key);
+        if (sim > score) {
+            score = sim;
+            best = DB_LAGU[key];
         }
-
-        return best;
-
-    } catch (e) {
-        console.log("[GENIUS ERROR]", e.message);
-        return null;
     }
+
+    if (score > 0.5) return best;
+
+    return query;
 }
 
-// ================= SCRAPE =================
-async function scrapeLyrics(url) {
+// ================= API FALLBACK =================
+async function lyricsAPI(query) {
     try {
-        const { data } = await axios.get(url, {
-            headers: {
-                "User-Agent":
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36",
-                "Referer": "https://genius.com/"
-            }
-        });
+        const parts = query.split(" ");
+        const artist = parts[0];
+        const title = parts.slice(1).join(" ");
 
-        const $ = cheerio.load(data);
+        const url = `https://api.lyrics.ovh/v1/${artist}/${title}`;
 
-        let lyrics = "";
+        const { data } = await axios.get(url);
 
-        $("div[data-lyrics-container='true']").each((i, el) => {
-            lyrics += $(el).text() + "\n";
-        });
-
-        return lyrics.trim();
-
-    } catch (e) {
-        console.log("[SCRAPE ERROR]", e.message);
+        return data?.lyrics || null;
+    } catch {
         return null;
     }
 }
@@ -117,9 +93,7 @@ async function scrapeLyrics(url) {
 // ================= MAIN =================
 export async function lirik(sock, msg, from, sender, cmd, args) {
 
-    const query = Array.isArray(args) ? args.join(" ") : args;
-
-    console.log("[AUTO SEARCH]:", query);
+    const query = args.join(" ").trim();
 
     if (!query) {
         return sock.sendMessage(from, {
@@ -127,36 +101,81 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
         }, { quoted: msg });
     }
 
+    console.log("[LIRIK RAW]:", query);
+
     await sock.sendMessage(from, {
         react: { text: "⏳", key: msg.key }
     });
 
-    // 🔥 AUTO DETECT ARTIST
-    const result = await searchGeniusSmart(query);
+    // ================= LOAD CACHE =================
+    const cache = loadCache();
+    const key = normalize(query);
 
-    if (!result) {
+    if (cache[key]) {
+        console.log("[CACHE HIT]");
         return sock.sendMessage(from, {
-            text: "❌ Lagu tidak ditemukan"
+            text: cache[key]
         }, { quoted: msg });
     }
 
-    console.log("[SELECTED]:", result.artist, "-", result.title);
+    // ================= SMART QUERY =================
+    const smartQuery = smartDetect(query);
 
-    const lyrics = await scrapeLyrics(result.url);
+    console.log("[SMART]:", smartQuery);
 
+    let lyrics = null;
+
+    // ================= TRY 1 =================
+    try {
+        console.log("[TRY] lyrics-finder");
+        lyrics = await lyricsFinder("", smartQuery);
+    } catch {}
+
+    // ================= TRY 2 =================
+    if (!lyrics) {
+        console.log("[TRY] API lyrics.ovh");
+        lyrics = await lyricsAPI(smartQuery);
+    }
+
+    // ================= TRY 3 =================
+    if (!lyrics && smartQuery !== query) {
+        console.log("[TRY] fallback original");
+        lyrics = await lyricsFinder("", query);
+    }
+
+    // ================= FAIL =================
     if (!lyrics) {
         return sock.sendMessage(from, {
-            text: "❌ Lirik gagal diambil"
+            text:
+`❌ Lirik tidak ditemukan
+
+🔎 Query: ${query}
+
+💡 Coba:
+- tambahkan nama artis
+- contoh: bahagia lagi piche`
         }, { quoted: msg });
     }
 
-    await sock.sendMessage(from, {
-        text:
-`🎶 ${result.title}
-👤 Artist: ${result.artist}
-━━━━━━━━━━━━━━
+    lyrics = lyrics
+        .replace(/\r/g, "")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
 
-${lyrics}`
+    const result =
+`🎶 LIRIK DITEMUKAN
+━━━━━━━━━━━━━━
+🎵 ${smartQuery}
+
+${lyrics}`;
+
+    // ================= SAVE CACHE =================
+    cache[key] = result;
+    saveCache(cache);
+
+    // ================= SEND =================
+    await sock.sendMessage(from, {
+        text: result
     }, { quoted: msg });
 
     await sock.sendMessage(from, {
