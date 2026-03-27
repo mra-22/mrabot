@@ -429,15 +429,43 @@ export const funCommands = async (sock, msg, from, sender, cmd, args, getName) =
         }, { quoted: msg });
     }
 
-    if (cmd === "sambungkata") {
+    // ================= SAMBUNG KATA GAME =================
+
+    // simpan session
+    const acakSessions = new Map();
+
+    // random word
+    function getRandomWord(words) {
+        const word = words[Math.floor(Math.random() * words.length)];
+        const shuffled = word.split("").sort(() => Math.random() - 0.5).join("");
+        return { word, shuffled };
+    }
+
+    // ================= COMMAND =================
+    if (cmd === "sk") {
         const userDB = getAllUserData();
         const userData = userDB[sender];
 
-        if (!userData) return sock.sendMessage(from, { text: "⚠️ Kamu belum terdaftar", quoted: msg });
+        if (!userData) {
+            return sock.sendMessage(from, { text: "⚠️ Kamu belum terdaftar" }, { quoted: msg });
+        }
+
+        if (acakSessions.has(sender)) {
+            return sock.sendMessage(from, {
+                text: "⚠️ Kamu masih dalam game!"
+            }, { quoted: msg });
+        }
 
         const biayaMain = 2000;
-        if (userData.saldo < biayaMain) return sock.sendMessage(from, { text: "⚠️ Saldo tidak cukup", quoted: msg });
+        if (userData.saldo < biayaMain) {
+            return sock.sendMessage(from, { text: "⚠️ Saldo tidak cukup" }, { quoted: msg });
+        }
 
+        // kurangi saldo
+        userData.saldo -= biayaMain;
+        setAllUserData(userDB);
+
+        // list kata
         const words = [
             "botak", "komputer", "internet", "program", "javascript", "keyboard", "monitor", "server", "database", "terminal",
             "printer", "router", "modem", "browser", "website", "hosting", "domain", "coding", "developer", "frontend",
@@ -501,80 +529,184 @@ export const funCommands = async (sock, msg, from, sender, cmd, args, getName) =
             "kakek", "nenek", "tetangga", "kenalan", "rekan", "partner", "mentor", "murid", "guru", "pemimpin"
         ];
 
-        const word = words[Math.floor(Math.random() * words.length)];
-        const shuffled = word.split("").sort(() => Math.random() - 0.5).join("")
+        const { word, shuffled } = getRandomWord(words);
 
-        userData.saldo -= biayaMain
-        setAllUserData(userDB)
-
-        // simpan session, clueCount & revealedIndexes
+        // buat session
         acakSessions.set(sender, {
             jawaban: word,
-            hadiah: 50000,
+            ronde: 1,
+            maxRonde: 10,
+            totalHadiah: 0,
+            hadiah: 5000,
             chat: from,
             clueCount: 0,
-            revealedIndexes: [] // menyimpan huruf yang sudah diketahui
-        })
+            revealedIndexes: []
+        });
 
         return sock.sendMessage(from, {
-            text: `╭──🧠 *SUSUN KATA* ──⬣
+            text: `╭──🧠 *SAMBUNG KATA (1/10)* ──⬣
 │ 🔤 ${shuffled.toUpperCase()}
-│ 💰 Hadiah: Rp 50.000
-│ 💡 Ketik *!clue* untuk petunjuk (maks 3x)
-╰⬣`,
-            mentions: [sender]
-        }, { quoted: msg })
+│ 💰 Hadiah/soal: Rp 5.000
+│ 💡 !clue (maks 3x)
+│ ✏️ Jawab langsung di chat
+╰⬣`
+        }, { quoted: msg });
     }
 
-    const session = acakSessions.get(sender)
+    // ================= HANDLER GAME =================
+    const session = acakSessions.get(sender);
+
     if (session) {
-        const text = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim().toUpperCase();
+        const text = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '')
+            .trim()
+            .toLowerCase();
 
-        // Jawaban benar
-        if (text.replace(/\s+/g, '') === session.jawaban.toUpperCase()) {
-            const userDB = getAllUserData();
-            const userData = userDB[sender];
+        const jawaban = session.jawaban.toLowerCase();
 
-            userData.saldo += session.hadiah;
-            setAllUserData(userDB);
-            acakSessions.delete(sender);
+        // ===== JAWAB BENAR =====
+        if (text.replace(/\s+/g, '') === jawaban) {
+            session.totalHadiah += session.hadiah;
+            session.ronde++;
 
-            await sock.sendMessage(session.chat, {
-                text: `🎉 Jawaban benar: *${session.jawaban}*\n💰 Hadiah: Rp ${session.hadiah.toLocaleString()}`,
-                mentions: [sender]
+            // selesai 10 soal
+            if (session.ronde > session.maxRonde) {
+                const userDB = getAllUserData();
+                const userData = userDB[sender];
+
+                userData.saldo += session.totalHadiah;
+                setAllUserData(userDB);
+
+                acakSessions.delete(sender);
+
+                return sock.sendMessage(session.chat, {
+                    text: `🎉 *SELESAI!*
+💰 Total hadiah: Rp ${session.totalHadiah.toLocaleString()}`
+                }, { quoted: msg });
+            }
+
+            // lanjut soal berikutnya
+            const words = [
+                "botak", "komputer", "internet", "program", "javascript", "keyboard", "monitor", "server", "database", "terminal",
+                "printer", "router", "modem", "browser", "website", "hosting", "domain", "coding", "developer", "frontend",
+                "backend", "framework", "library", "software", "hardware", "algorithm", "variable", "function", "object", "array",
+                "string", "boolean", "integer", "compile", "execute", "debug", "syntax", "network", "protocol", "firewall",
+                "linux", "windows", "android", "ios", "github", "gitlab", "repository", "commit", "branch", "merge",
+
+                "sekolah", "kampus", "belajar", "buku", "pensil", "penghapus", "kelas", "guruku", "murid", "ujian",
+                "pelajaran", "matematika", "biologi", "fisika", "kimia", "sejarah", "geografi", "bahasa", "perpustakaan", "rapor",
+                "guru", "siswa", "jadwal", "pelajar", "praktikum", "materi", "catatan", "diskusi", "tugas", "kuliah",
+                "skripsi", "dosen", "seminar", "absensi", "nilai", "ijazah", "wisuda", "akademik", "pendidikan", "literasi",
+
+                "kucing", "anjing", "burung", "ikan", "gajah", "harimau", "singa", "jerapah", "kambing", "kuda",
+                "ayam", "bebek", "monyet", "panda", "serigala", "ular", "katak", "elang", "hiu", "paus",
+                "badak", "zebra", "koala", "kanguru", "rakun", "rusa", "bison", "iguana", "tokek", "belut",
+                "udang", "kepiting", "cumi", "gurita", "pari", "lumba", "pausbiru", "rajawali", "merpati", "kakatua",
+
+                "nasi", "bakso", "sate", "mieayam", "rendang", "gudeg", "soto", "pecel", "ketoprak", "martabak",
+                "roti", "donat", "pizza", "burger", "spageti", "omelet", "pancake", "coklat", "keju", "mentega",
+                "sosis", "nugget", "biskuit", "wafer", "sirup", "kopi", "teh", "susu", "yogurt", "eskrim",
+                "lontong", "ketupat", "opor", "tongseng", "rawon", "pempek", "siomay", "batagor", "cilok", "cireng",
+
+                "jakarta", "bandung", "surabaya", "makassar", "medan", "yogyakarta", "semarang", "malang", "palembang", "balikpapan",
+                "papua", "kalimantan", "sulawesi", "sumatera", "bali", "lombok", "ambon", "manado", "kupang", "pontianak",
+                "aceh", "lampung", "bengkulu", "jambi", "padang", "bogor", "depok", "tangerang", "bekasi", "cirebon",
+
+                "mobil", "motor", "sepeda", "pesawat", "kereta", "kapal", "truk", "bus", "taksi", "helikopter",
+                "skuter", "perahu", "roket", "drone", "ambulans", "bajaj", "delman", "becak", "submarine", "pickup",
+                "minibus", "sedan", "limosin", "traktor", "buldozer", "forklift", "skateboard", "hoverboard", "sepatu", "roller",
+
+                "hujan", "petir", "angin", "badai", "awan", "panas", "dingin", "salju", "pelangi", "kabut",
+                "cuaca", "iklim", "musim", "kemarau", "tornado", "topan", "gelombang", "banjir", "longsor", "gerimis",
+                "kabuttebal", "petirmalam", "anginkencang", "langitbiru", "langitcerah", "awanputih", "awanabu", "sinarmentari",
+
+                "rumah", "gedung", "kantor", "hotel", "restoran", "warung", "toko", "pasar", "mall", "bandara",
+                "pelabuhan", "jembatan", "jalan", "gang", "taman", "lapangan", "stadion", "museum", "bioskop", "teater",
+                "perpustakaan", "kampusbesar", "kantorpos", "rumahsakit", "puskesmas", "apartemen", "asrama", "balai", "aula",
+
+                "musik", "lagu", "gitar", "drum", "piano", "biola", "saxophone", "trompet", "konser", "album",
+                "melodi", "irama", "lirik", "penyanyi", "band", "orchestra", "genre", "pop", "rock", "dangdut",
+                "jazz", "metal", "hiphop", "reggae", "remix", "djmusik", "soundtrack", "studio", "produser", "komposer",
+
+                "film", "aktor", "aktris", "sutradara", "kamera", "studio", "naskah", "adegan", "trailer", "bioskop",
+                "komedi", "drama", "horor", "aksi", "fantasi", "animasi", "dokumenter", "serial", "episode", "produksi",
+                "editing", "sinematografi", "proyektor", "layarlebar", "casting", "audisi", "premiere", "sinopsis", "subtitle",
+
+                "bola", "basket", "voli", "tenis", "badminton", "renang", "lari", "sepatu", "stadion", "turnamen",
+                "olahraga", "juara", "medali", "pelatih", "timnas", "penyerang", "bek", "kiper", "kapten", "wasit",
+                "liga", "klub", "transfer", "dribble", "shooting", "passing", "tackle", "strategi", "pertahanan", "serangan",
+
+                "matahari", "bulan", "bintang", "planet", "galaksi", "meteor", "asteroid", "komet", "orbit", "gravitasi",
+                "teleskop", "astronomi", "kosmos", "nebula", "supernova", "saturnus", "venus", "mars", "merkurius", "uranus",
+
+                "merah", "biru", "kuning", "hijau", "ungu", "jingga", "coklat", "hitam", "putih", "abuabu",
+                "emas", "perak", "tembaga", "perunggu", "magenta", "cyan", "navy", "maroon", "turkis", "indigo",
+
+                "pagi", "siang", "sore", "malam", "subuh", "senja", "dinihari", "tengahhari", "petang", "larut",
+                "detik", "menit", "jam", "hari", "minggu", "bulan", "tahun", "dekade", "abad", "milinium",
+
+                "teman", "sahabat", "keluarga", "ayah", "ibu", "kakak", "adik", "paman", "bibi", "sepupu",
+                "kakek", "nenek", "tetangga", "kenalan", "rekan", "partner", "mentor", "murid", "guru", "pemimpin"
+            ];
+
+            const { word, shuffled } = getRandomWord(words);
+
+            session.jawaban = word;
+            session.clueCount = 0;
+            session.revealedIndexes = [];
+
+            return sock.sendMessage(session.chat, {
+                text: `✅ Benar!
+
+╭──🧠 *SOAL (${session.ronde}/10)* ──⬣
+│ 🔤 ${shuffled.toUpperCase()}
+│ 💰 Total: Rp ${session.totalHadiah.toLocaleString()}
+╰⬣`
             }, { quoted: msg });
         }
 
-        // Fitur clue
+        // ===== CLUE =====
         if (text === "!cluesk") {
             if (session.clueCount >= 3) {
-                return sock.sendMessage(session.chat, { text: "⚠️ Kamu sudah menggunakan 3 clue maksimal!" }, { quoted: msg });
+                return sock.sendMessage(session.chat, {
+                    text: "⚠️ Clue habis!"
+                }, { quoted: msg });
             }
 
-            session.clueCount += 1;
+            session.clueCount++;
 
-            // ambil huruf yang belum terungkap
             let hiddenIndexes = [];
             for (let i = 0; i < session.jawaban.length; i++) {
                 if (!session.revealedIndexes.includes(i)) hiddenIndexes.push(i);
             }
 
-            if (hiddenIndexes.length === 0) return; // semua huruf sudah terbuka
+            if (hiddenIndexes.length === 0) {
+                return sock.sendMessage(session.chat, {
+                    text: "✅ Semua huruf sudah terbuka!"
+                }, { quoted: msg });
+            }
 
-            // pilih satu huruf acak yang belum terbuka
             const newIndex = hiddenIndexes[Math.floor(Math.random() * hiddenIndexes.length)];
             session.revealedIndexes.push(newIndex);
 
-            // bangun string clue
             let clueText = "";
             for (let i = 0; i < session.jawaban.length; i++) {
-                clueText += session.revealedIndexes.includes(i) ? session.jawaban[i] : "_ ";
+                clueText += session.revealedIndexes.includes(i)
+                    ? session.jawaban[i].toUpperCase() + " "
+                    : "_ ";
             }
 
-            await sock.sendMessage(session.chat, { text: `💡 Clue ${session.clueCount}/3: ${clueText}` }, { quoted: msg });
+            return sock.sendMessage(session.chat, {
+                text: `💡 Clue (${session.clueCount}/3):\n${clueText}`
+            }, { quoted: msg });
+        }
+
+        // ===== JAWABAN SALAH =====
+        if (!text.startsWith("!")) {
+            return sock.sendMessage(session.chat, {
+                text: "❌ Salah!"
+            }, { quoted: msg });
         }
     }
-
     // 🔎 !truth
     if (cmd === "truth") {
         const list = [
