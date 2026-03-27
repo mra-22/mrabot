@@ -1700,7 +1700,7 @@ const sendNextGambar = async (sock, from, msg) => {
     let answer = path.parse(currentFile).name.toLowerCase();
 
     const instruksiMsg = await sock.sendMessage(from, {
-        text: `🖼️ *Sesi ${game.stage}/5*\n⏱ Waktu menjawab: *15 detik*\n↪ Balas gambar ini dengan jawabannya.`
+        text: `🖼️ *Sesi ${game.stage}/5*\n⏱ Waktu menjawab: *1 menit*\n↪ Balas gambar ini dengan jawabannya.`
     }, { quoted: msg });
 
     const sentMsg = await sock.sendMessage(from, {
@@ -1728,7 +1728,7 @@ const sendNextGambar = async (sock, from, msg) => {
 
         return sendNextGambar(sock, from, msg);
 
-    }, 15000);
+    }, 60000);
 
 };
 
