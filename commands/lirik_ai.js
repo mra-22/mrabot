@@ -112,37 +112,45 @@ async function scrapeLyricsAI(url) {
         const $ = cheerio.load(data);
         let text = "";
 
-        // ================= GENIUS =================
+        // ================= GENIUS (BEST SOURCE) =================
         if (url.includes("genius.com")) {
             $('[data-lyrics-container="true"]').each((i, el) => {
                 text += $(el).text() + "\n";
             });
         }
 
-        // ================= KAPANLAGI =================
+        // ================= KAPANLAGI (FIXED TOTAL) =================
         else if (url.includes("kapanlagi")) {
-            text = $("#lirik-main-content").text();
+
+            // 🔥 INI FIX UTAMA: ambil hanya container lirik
+            text = $("#lirik-main-content").text()
+                || $(".lyrics-body").text()
+                || $(".lirik-content").text();
+
         }
 
-        // ================= AZLYRICS =================
+        // ================= AZLYRICS (FIXED CLEAN) =================
         else if (url.includes("azlyrics")) {
-            $("div").each((i, el) => {
-                const t = $(el).text();
 
-                if (
-                    t &&
-                    t.length > 200 &&
-                    t.length < 8000 &&
-                    !t.includes("function") &&
-                    !t.includes("var ") &&
-                    !t.includes("cookie")
-                ) {
-                    text += t + "\n";
-                }
-            });
+            // ambil hanya middle content (bukan semua div)
+            const bodyText = $("body").text();
+
+            // potong noise kasar
+            text = bodyText.split("if(typeof")[0]; // buang JS KapanLagi style
         }
 
-        text = aiCleanLyrics(text);
+        // ================= FINAL CLEAN =================
+        text = text
+            .replace(/<script[\s\S]*?<\/script>/gi, "")
+            .replace(/<style[\s\S]*?<\/style>/gi, "")
+            .replace(/if\s*\(typeof[\s\S]*$/gim, "")   // 🔥 FIX ERROR KAMU
+            .replace(/#tipsmodal[\s\S]*/gi, "")
+            .replace(/\.lyric-top-search[\s\S]*/gi, "")
+            .replace(/window\..*?\n/g, "")
+            .replace(/document\..*?\n/g, "")
+            .replace(/Advertisement|Embed|Share|Copy|Cookie|Privacy/gi, "")
+            .replace(/\s{3,}/g, "\n")
+            .trim();
 
         if (text.length < 80) return null;
 
@@ -153,7 +161,6 @@ async function scrapeLyricsAI(url) {
         return null;
     }
 }
-
 // ================= SEARCH =================
 async function searchGoogle(query) {
     try {
