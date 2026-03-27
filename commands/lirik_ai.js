@@ -1,160 +1,41 @@
 import axios from "axios";
-import * as cheerio from "cheerio";
 import fs from "fs";
+import { chromium } from "playwright";
+
+// ================= CONFIG =================
+const CACHE_FILE = "./database/lirik_cache.json";
+
+// ================= CACHE =================
+function loadCache() {
+    if (!fs.existsSync(CACHE_FILE)) return {};
+    return JSON.parse(fs.readFileSync(CACHE_FILE));
+}
+
+function saveCache(cache) {
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2));
+}
 
 // ================= NORMALIZE =================
 function normalize(text) {
     return text.toLowerCase().replace(/[^a-z0-9\s]/g, "").trim();
 }
 
-// ================= CLEAN SUPER =================
+// ================= CLEAN =================
 function cleanLyrics(text) {
     return text
-        .replace(/Advertisement/gi, "")
-        .replace(/Embed|Share|Copy/gi, "")
-        .replace(/\{.*?\}/gs, "")
-        .replace(/@context|schema\.org/gi, "")
-        .replace(/function\(.*?\)/gs, "")
-        .replace(/window\..*/g, "")
-        .replace(/document\..*/g, "")
         .replace(/\[.*?\]/g, "")
-        .replace(/http\S+/g, "")
         .replace(/\s{2,}/g, " ")
         .replace(/\n{2,}/g, "\n\n")
         .trim();
 }
 
-// ================= FILTER LINE =================
-function filterLines(text) {
-    return text
-        .split("\n")
-        .map(l => l.trim())
-        .filter(l =>
-            l.length > 5 &&
-            !l.match(/(http|www|var |let |const |return)/i) &&
-            !l.match(/(HOME|BERITA|VIDEO|IKLAN|Advertisement)/i)
-        )
-        .join("\n");
-}
-
-// ================= MUSIXMATCH SCRAPER (PRIORITAS) =================
-async function scrapeMusixmatch(url) {
-    try {
-        const { data } = await axios.get(url, {
-            headers: {
-                "User-Agent": "Mozilla/5.0"
-            }
-        });
-
-        const $ = cheerio.load(data);
-
-        let lyrics = "";
-
-        // 🔥 selector terbaru musixmatch
-        $("div[class*='Lyrics__Container']").each((i, el) => {
-            const html = $(el).html();
-
-            if (html) {
-                const text = html
-                    .replace(/<br\s*\/?>/gi, "\n")
-                    .replace(/<\/?[^>]+(>|$)/g, "");
-
-                lyrics += text + "\n";
-            }
-        });
-
-        // fallback lama
-        if (!lyrics || lyrics.length < 50) {
-            $("span").each((i, el) => {
-                const t = $(el).text().trim();
-                if (t.length > 1) lyrics += t + "\n";
-            });
-        }
-
-        lyrics = filterLines(lyrics);
-        lyrics = cleanLyrics(lyrics);
-
-        if (lyrics.length < 50) return null;
-
-        return lyrics;
-
-    } catch (e) {
-        console.log("[MUSIXMATCH ERROR]", e.message);
-        return null;
-    }
-}
-
-// ================= SCRAPER UNIVERSAL =================
-async function scrapeUniversal(url) {
-    try {
-        const { data } = await axios.get(url, {
-            headers: { "User-Agent": "Mozilla/5.0" }
-        });
-
-        const $ = cheerio.load(data);
-
-        let lyrics = "";
-
-        // JSON schema (PALING AKURAT)
-        const jsonMatch = data.match(/"lyrics":\s*{[^}]*"text":"([^"]+)"/);
-        if (jsonMatch) {
-            lyrics = jsonMatch[1]
-                .replace(/\\n/g, "\n")
-                .replace(/([a-z])([A-Z])/g, "$1\n$2");
-
-            return cleanLyrics(lyrics);
-        }
-
-        // KapanLagi
-        if (url.includes("kapanlagi")) {
-            lyrics = $("#lirik-main-content").text();
-        }
-
-        // Genius
-        else if (url.includes("genius")) {
-            lyrics = $('[data-lyrics-container="true"]').text();
-        }
-
-        // AZLyrics
-        else if (url.includes("azlyrics")) {
-            lyrics = $("div.lyricsh").next().text();
-        }
-
-        // fallback global
-        if (!lyrics || lyrics.length < 50) {
-            $("p, div").each((i, el) => {
-                const t = $(el).text().trim();
-
-                if (
-                    t.length > 30 &&
-                    t.length < 500 &&
-                    !t.includes("http")
-                ) {
-                    lyrics += t + "\n";
-                }
-            });
-        }
-
-        lyrics = filterLines(lyrics);
-        lyrics = cleanLyrics(lyrics);
-
-        if (lyrics.length < 50) return null;
-
-        return lyrics;
-
-    } catch (e) {
-        console.log("[SCRAPE ERROR]", e.message);
-        return null;
-    }
-}
-
-// ================= SEARCH GOOGLE =================
-async function searchGoogle(query) {
+// ================= SEARCH MUSIXMATCH =================
+async function searchMusixmatch(query) {
     try {
         const { data } = await axios.post(
             "https://google.serper.dev/search",
             {
-                q: `${query} musixmatch lyrics`
+                q: `${query} site:musixmatch.com lyrics`
             },
             {
                 headers: {
@@ -166,45 +47,87 @@ async function searchGoogle(query) {
 
         const results = data.organic || [];
 
-        let musix = null;
-        let other = null;
-
         for (const r of results) {
-            if (r.link.includes("musixmatch") && !musix) {
-                musix = r.link;
-            }
-
-            if (
-                (r.link.includes("kapanlagi") ||
-                 r.link.includes("genius") ||
-                 r.link.includes("azlyrics")) &&
-                !other
-            ) {
-                other = r.link;
+            if (r.link.includes("musixmatch.com")) {
+                return r.link;
             }
         }
 
-        console.log("[MUSIX URL]:", musix);
-        console.log("[FALLBACK URL]:", other);
-
-        return { musix, other };
+        return null;
 
     } catch (e) {
         console.log("[SEARCH ERROR]", e.message);
-        return {};
+        return null;
     }
 }
 
-// ================= CACHE =================
-const CACHE_FILE = "./database/lirik_cache.json";
+// ================= PLAYWRIGHT SCRAPER =================
+async function scrapeMusixmatch(url) {
+    let browser;
 
-function loadCache() {
-    if (!fs.existsSync(CACHE_FILE)) return {};
-    return JSON.parse(fs.readFileSync(CACHE_FILE));
-}
+    try {
+        // 🔥 FIX URL (hapus /ko /id dll)
+        url = url.replace(/musixmatch\.com\/[a-z]{2}\//, "musixmatch.com/");
 
-function saveCache(cache) {
-    fs.writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2));
+        console.log("[PLAYWRIGHT URL]:", url);
+
+        browser = await chromium.launch({
+            headless: true,
+        });
+
+        const page = await browser.newPage();
+
+        await page.setExtraHTTPHeaders({
+            "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+        });
+
+        await page.goto(url, { waitUntil: "domcontentloaded" });
+
+        // ================= AUTO SCROLL =================
+        await page.evaluate(async () => {
+            await new Promise((resolve) => {
+                let totalHeight = 0;
+                const distance = 300;
+
+                const timer = setInterval(() => {
+                    window.scrollBy(0, distance);
+                    totalHeight += distance;
+
+                    if (totalHeight >= document.body.scrollHeight) {
+                        clearInterval(timer);
+                        resolve();
+                    }
+                }, 200);
+            });
+        });
+
+        // tunggu container lirik
+        await page.waitForSelector("div[class*='Lyrics__Container']", {
+            timeout: 10000,
+        });
+
+        // ================= AMBIL LIRIK =================
+        const lyrics = await page.$$eval(
+            "div[class*='Lyrics__Container']",
+            (els) =>
+                els
+                    .map((el) => el.innerText)
+                    .join("\n")
+        );
+
+        await browser.close();
+
+        if (!lyrics || lyrics.length < 50) return null;
+
+        return cleanLyrics(lyrics);
+
+    } catch (e) {
+        if (browser) await browser.close();
+        console.log("[PLAYWRIGHT ERROR]", e.message);
+        return null;
+    }
 }
 
 // ================= MAIN =================
@@ -227,6 +150,7 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
     const cache = loadCache();
     const key = normalize(query);
 
+    // ================= CACHE =================
     if (cache[key]) {
         console.log("[CACHE HIT]");
         return sock.sendMessage(from, {
@@ -235,33 +159,29 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
     }
 
     // ================= SEARCH =================
-    const { musix, other } = await searchGoogle(query);
+    const url = await searchMusixmatch(query);
 
-    let lyrics = null;
-
-    // ================= PRIORITAS MUSIXMATCH =================
-    if (musix) {
-        console.log("[TRY] MUSIXMATCH");
-        lyrics = await scrapeMusixmatch(musix);
+    if (!url) {
+        return sock.sendMessage(from, {
+            text: "❌ Lagu tidak ditemukan"
+        }, { quoted: msg });
     }
 
-    // ================= FALLBACK =================
-    if (!lyrics && other) {
-        console.log("[TRY] FALLBACK SITE");
-        lyrics = await scrapeUniversal(other);
-    }
+    console.log("[MUSIX URL]:", url);
+
+    // ================= SCRAPE =================
+    let lyrics = await scrapeMusixmatch(url);
 
     // ================= FAIL =================
     if (!lyrics) {
         return sock.sendMessage(from, {
             text:
-`❌ Lirik tidak ditemukan
+`❌ Gagal ambil lirik dari Musixmatch
 
 🔎 Query: ${query}
 
-💡 Tips:
-- tambah artis
-- contoh: bahagia lagi piche kota`
+💡 Coba tambah artis
+contoh: bahagia lagi piche kota`
         }, { quoted: msg });
     }
 
@@ -272,6 +192,7 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
 
 ${lyrics}`;
 
+    // ================= SAVE CACHE =================
     cache[key] = result;
     saveCache(cache);
 
