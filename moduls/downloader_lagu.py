@@ -4,50 +4,90 @@ import re
 import subprocess
 from yt_dlp import YoutubeDL
 
+# ================= CONFIG =================
+OUTPUT_DIR = "/tmp/audios"
+COOKIE_FILE = "cookiesyt.txt"
+
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# ================= HELPERS =================
+def safe_filename(name):
+    return re.sub(r'[\\/*?:"<>|]', "", name)
+
+def log(msg):
+    print(msg, flush=True)
+
+# ================= VALIDASI INPUT =================
 if len(sys.argv) < 2:
-    print("::ERROR::Query kosong", flush=True)
+    log("::ERROR::Query kosong")
     sys.exit(1)
 
 query = " ".join(sys.argv[1:])
 search = f"ytsearch1:{query}"
-
-output_dir = "/tmp/audios"
-os.makedirs(output_dir, exist_ok=True)
 
 video_url = None
 title = query
 video = {}
 
 try:
-    # 🔍 SEARCH
-    with YoutubeDL({"quiet": True, "skip_download": True}) as ydl:
+    # ================= 🔍 SEARCH =================
+    with YoutubeDL({
+        "quiet": True,
+        "skip_download": True,
+        "cookiefile": COOKIE_FILE,
+        "retries": 5
+    }) as ydl:
+
         info = ydl.extract_info(search, download=False)
+
+        if not info or "entries" not in info or not info["entries"]:
+            raise Exception("Video tidak ditemukan")
+
         video = info["entries"][0]
 
         video_url = video.get("webpage_url", "")
-        title = video.get("title", query)
+        title = safe_filename(video.get("title", query))
 
-    # ⬇️ DOWNLOAD
+    # ================= ⬇️ DOWNLOAD =================
     ydl_opts = {
         "quiet": True,
         "format": "bestaudio/best",
-        "outtmpl": f"{output_dir}/%(title)s.%(ext)s",
+        "outtmpl": f"{OUTPUT_DIR}/%(title)s.%(ext)s",
         "noplaylist": True,
+
+        # 🔥 ANTI BOT
+        "cookiefile": COOKIE_FILE,
+
+        # 🔥 STABIL
+        "retries": 10,
+        "fragment_retries": 10,
+        "ignoreerrors": True,
+
+        # 🔥 BYPASS YOUTUBE
         "extractor_args": {
             "youtube": {
-                "player_client": ["android", "web_creator"]
+                "player_client": ["android", "web", "web_creator"],
+                "skip": ["hls", "dash"]
             }
         },
+
+        # 🔥 FAKE HEADERS
         "http_headers": {
-            "User-Agent": "com.google.android.youtube/19.09.37"
-        }
+            "User-Agent": "Mozilla/5.0 (Linux; Android 13; SM-A515F) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9"
+        },
+
+        # 🔥 ANTI BAN
+        "concurrent_fragment_downloads": 1,
+        "sleep_interval": 1,
+        "max_sleep_interval": 3
     }
 
     with YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(video_url, download=True)
         filepath = ydl.prepare_filename(info)
 
-    # 🎧 CONVERT
+    # ================= 🎧 CONVERT KE MP3 =================
     base, ext = os.path.splitext(filepath)
     mp3_path = base + ".mp3"
 
@@ -57,20 +97,22 @@ try:
         stderr=subprocess.DEVNULL
     )
 
-    if os.path.exists(mp3_path):
-        os.remove(filepath)
-
-        print(f"::SUCCESS::{mp3_path}", flush=True)
-    else:
+    if not os.path.exists(mp3_path):
         raise Exception("Convert gagal")
 
-except Exception as e:
-    print(f"::ERROR::{str(e)}", flush=True)
+    # hapus file asli
+    if os.path.exists(filepath):
+        os.remove(filepath)
 
-# 🔥 SELALU KIRIM INFO
+    log(f"::SUCCESS::{mp3_path}")
+
+except Exception as e:
+    log(f"::ERROR::{str(e)}")
+
+# ================= INFO OUTPUT =================
 if video_url:
-    print(f"::TITLE::{title}", flush=True)
-    print(f"::URL::{video_url}", flush=True)
-    print(f"::THUMB::{video.get('thumbnail','')}", flush=True)
-    print(f"::UPLOADER::{video.get('uploader','-')}", flush=True)
-    print(f"::DURATION::{video.get('duration',0)}", flush=True)
+    log(f"::TITLE::{title}")
+    log(f"::URL::{video_url}")
+    log(f"::THUMB::{video.get('thumbnail','')}")
+    log(f"::UPLOADER::{video.get('uploader','-')}")
+    log(f"::DURATION::{video.get('duration',0)}")
