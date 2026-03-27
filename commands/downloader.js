@@ -271,7 +271,7 @@ export async function play(sock, msg, from, sender, cmd, args) {
 ┃ ⏱️ Durasi  : ${formatDuration(duration)}
 ╰━━━━━━━━━━━━━━━━⬣`;
 
-        // 📸 thumbnail
+        // thumbnail dulu
         if (thumbnail) {
             await sock.sendMessage(from, {
                 image: { url: thumbnail },
@@ -281,15 +281,13 @@ export async function play(sock, msg, from, sender, cmd, args) {
             await sock.sendMessage(from, { text: caption }, { quoted: msg });
         }
 
-        // 🎧 kirim audio lokal
+        // audio lokal
         if (mp3Match) {
             const path = mp3Match[1].trim();
 
             if (fs.existsSync(path)) {
-                const buffer = fs.readFileSync(path);
-
                 await sock.sendMessage(from, {
-                    audio: buffer,
+                    audio: fs.readFileSync(path),
                     mimetype: "audio/mpeg",
                     fileName: `${title}.mp3`
                 }, { quoted: msg });
@@ -300,11 +298,11 @@ export async function play(sock, msg, from, sender, cmd, args) {
         }
 
     } catch (e) {
-        console.log("❌ yt-dlp gagal:", e.message);
+        console.log("❌ python gagal:", e.message);
     }
 
     // ==============================
-    // 🔥 MULTI FALLBACK API
+    // 🔥 SUPER FALLBACK (3 API + retry)
     // ==============================
     if (!success && videoUrl) {
 
@@ -321,20 +319,18 @@ export async function play(sock, msg, from, sender, cmd, args) {
                 const res = await fetch("https://api.cobalt.tools/api/json", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        url: videoUrl,
-                        vCodec: "h264",
-                        vQuality: "720"
-                    })
+                    body: JSON.stringify({ url: videoUrl })
                 });
                 const json = await res.json();
                 return json.url;
             }
         ];
 
-        for (let apiFunc of apis) {
+        for (let i = 0; i < apis.length; i++) {
             try {
-                const url = await apiFunc();
+                console.log(`🔄 coba fallback ${i + 1}`);
+
+                const url = await apis[i]();
 
                 if (url) {
                     await sock.sendMessage(from, {
@@ -353,11 +349,11 @@ export async function play(sock, msg, from, sender, cmd, args) {
     }
 
     // ==============================
-    // ❌ FINAL FAIL
+    // ❌ TOTAL FAIL
     // ==============================
-    if (!success && videoUrl) {
+    if (!success) {
         await sock.sendMessage(from, {
-            text: `🎧 Tidak bisa kirim audio.\n${videoUrl}`
+            text: `❌ Semua server gagal.\nCoba lagi nanti.`
         }, { quoted: msg });
     }
 
