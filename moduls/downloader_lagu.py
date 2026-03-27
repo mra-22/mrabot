@@ -52,12 +52,14 @@ try:
 
     ydl_opts = {
         "quiet": True,
-        "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best",
+        "format": "bestaudio",
         "outtmpl": output_template,
         "noplaylist": True,
         "nocheckcertificate": True,
         "geo_bypass": True,
         "cookiefile": "cookiesyt.txt",
+        "ignoreerrors": True,
+        "no_warnings": True,
         "extractor_args": {
             "youtube": {
                 "player_client": ["android", "web_creator"]
