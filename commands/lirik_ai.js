@@ -79,8 +79,15 @@ async function azlyricsSearch(query) {
 
 // ================= MAIN =================
 export async function lirik(sock, msg, from, args) {
-    const query = args.join(" ").trim();
-
+   const query = (() => {
+        if (!args) return "";
+    
+        if (Array.isArray(args)) return args.join(" ");
+    
+        if (typeof args === "string") return args;
+    
+        return String(args || "");
+    })().trim();
     console.log("[LIRIK RAW]:", query);
 
     if (!query) {
