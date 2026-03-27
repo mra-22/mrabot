@@ -7,33 +7,57 @@ function normalize(text) {
     return text.toLowerCase().replace(/[^a-z0-9\s]/g, "").trim();
 }
 
-// ================= CLEAN GLOBAL =================
+// ================= CLEAN =================
 function cleanLyrics(text) {
     return text
         .replace(/Advertisement/gi, "")
         .replace(/Embed|Share|Copy/gi, "")
         .replace(/\{.*?\}/g, "")
         .replace(/@context|schema\.org/gi, "")
-        .replace(/\[.*?\]/g, "") // hapus [Verse]
         .replace(/\s{2,}/g, " ")
-        .replace(/\n{2,}/g, "\n\n")
+        .replace(/\n{3,}/g, "\n\n")
         .trim();
 }
 
-// ================= UNIVERSAL FILTER =================
+// ================= PRESERVE SECTION =================
+function preserveSections(text) {
+    return text
+        .replace(/\[Verse\]/gi, "\nVERSE\n")
+        .replace(/\[Chorus\]/gi, "\nCHORUS\n")
+        .replace(/\[Bridge\]/gi, "\nBRIDGE\n");
+}
+
+// ================= FORMAT WA =================
+function formatLyricsForWhatsApp(text) {
+    return text
+        .replace(/\r/g, "")
+        .split("\n")
+        .map(l => l.trim())
+        .filter(l => l.length > 0)
+        .map(l => {
+            if (/^verse$/i.test(l)) return "\n🎤 VERSE\n";
+            if (/^chorus$/i.test(l)) return "\n🎶 CHORUS\n";
+            if (/^bridge$/i.test(l)) return "\n🎼 BRIDGE\n";
+            return l;
+        })
+        .join("\n")
+        .replace(/\n{3,}/g, "\n\n");
+}
+
+// ================= FILTER =================
 function filterLines(text) {
     return text
         .split("\n")
         .map(l => l.trim())
         .filter(l =>
             l.length > 3 &&
-            !l.match(/(http|www|function|var |let |const |return)/i) &&
-            !l.match(/(HOME|BERITA|VIDEO|IKLAN)/i)
+            !/(http|www|function|var |let |const |return)/i.test(l) &&
+            !/(HOME|BERITA|VIDEO|IKLAN|COOKIE|PRIVACY)/i.test(l)
         )
         .join("\n");
 }
 
-// ================= SCRAPER UTAMA =================
+// ================= SCRAPER =================
 async function scrapeLyrics(url) {
     try {
         const { data } = await axios.get(url, {
@@ -41,62 +65,60 @@ async function scrapeLyrics(url) {
         });
 
         const $ = cheerio.load(data);
-
         let lyrics = "";
 
-        // ================= 1. JSON SCHEMA =================
-        const jsonMatch = data.match(/"lyrics":\s*{[^}]*"text":"([^"]+)"/);
-        if (jsonMatch) {
-            lyrics = jsonMatch[1]
-                .replace(/\\n/g, "\n")
-                .replace(/([a-z])([A-Z])/g, "$1\n$2");
-            return cleanLyrics(lyrics);
+        // ================= GENIUS (PALING AKURAT) =================
+        if (url.includes("genius.com")) {
+            $('[data-lyrics-container="true"]').each((i, el) => {
+                lyrics += $(el).text() + "\n";
+            });
+
+            if (lyrics.trim()) return cleanLyrics(lyrics);
         }
 
-        // ================= 2. SITE KHUSUS =================
-
-        // KapanLagi
+        // ================= KAPANLAGI =================
         if (url.includes("kapanlagi")) {
             lyrics = $("#lirik-main-content").text();
+            if (lyrics.trim()) return cleanLyrics(lyrics);
         }
 
-        // Musixmatch
-        else if (url.includes("musixmatch")) {
-            $("span").each((i, el) => {
-                const t = $(el).text().trim();
-                if (t.length > 1) lyrics += t + "\n";
-            });
-        }
-
-        // AZLyrics
-        else if (url.includes("azlyrics")) {
-            lyrics = $("div.lyricsh").next().text();
-        }
-
-        // Genius
-        else if (url.includes("genius")) {
-            lyrics = $('[data-lyrics-container="true"]').text();
-        }
-
-        // ================= 3. UNIVERSAL FALLBACK =================
-        if (!lyrics || lyrics.length < 50) {
-            $("p, div").each((i, el) => {
+        // ================= AZLYRICS (FIXED) =================
+        if (url.includes("azlyrics")) {
+            $("div").each((i, el) => {
                 const t = $(el).text().trim();
 
-                if (
-                    t.length > 30 &&
-                    t.length < 500 &&
-                    !t.includes("http")
-                ) {
+                // ambil hanya blok panjang (lirik)
+                if (t && t.length > 100 && t.length < 10000) {
                     lyrics += t + "\n";
                 }
             });
+
+            if (lyrics.trim()) return cleanLyrics(lyrics);
+        }
+
+        // ================= FALLBACK AMAN (TIDAK NGACO LAGI) =================
+        if (!lyrics || lyrics.length < 50) {
+            const possible = [];
+
+            $("div, p").each((i, el) => {
+                const t = $(el).text().trim();
+
+                if (
+                    t.length > 40 &&
+                    t.length < 2000 &&
+                    !/(cookie|privacy|login|subscribe|advertisement|menu|nav)/i.test(t)
+                ) {
+                    possible.push(t);
+                }
+            });
+
+            lyrics = possible.sort((a, b) => b.length - a.length)[0] || "";
         }
 
         lyrics = filterLines(lyrics);
         lyrics = cleanLyrics(lyrics);
 
-        if (lyrics.length < 50) return null;
+        if (lyrics.length < 80) return null;
 
         return lyrics;
 
@@ -106,37 +128,49 @@ async function scrapeLyrics(url) {
     }
 }
 
-// ================= SEARCH SERPER =================
+// ================= SEARCH =================
 async function searchGoogle(query) {
     try {
-        const { data } = await axios.post(
-            "https://google.serper.dev/search",
-            { q: query + " lirik lagu" },
-            {
-                headers: {
-                    "X-API-KEY": process.env.SERPER_API_KEY,
-                    "Content-Type": "application/json",
+        const sites = [
+            "kapanlagi.com",
+            "genius.com",
+            "azlyrics.com"
+        ];
+
+        const resultsAll = [];
+
+        for (const site of sites) {
+            const { data } = await axios.post(
+                "https://google.serper.dev/search",
+                {
+                    q: `${query} lirik site:${site}`
                 },
+                {
+                    headers: {
+                        "X-API-KEY": process.env.SERPER_API_KEY,
+                        "Content-Type": "application/json",
+                    },
+                }
+            );
+
+            if (data.organic?.length) {
+                resultsAll.push(...data.organic);
             }
-        );
+        }
 
-        const results = data.organic || [];
-
-        for (const r of results) {
+        for (const r of resultsAll) {
             const link = r.link;
 
             if (
                 link.includes("kapanlagi") ||
-                link.includes("musixmatch") ||
-                link.includes("azlyrics") ||
-                link.includes("genius")
+                link.includes("genius") ||
+                link.includes("azlyrics")
             ) {
-                console.log("[URL FOUND]:", link);
                 return link;
             }
         }
 
-        return results[0]?.link || null;
+        return resultsAll[0]?.link || null;
 
     } catch (e) {
         console.log("[SEARCH ERROR]", e.message);
@@ -167,8 +201,6 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
         }, { quoted: msg });
     }
 
-    console.log("[LIRIK RAW]:", query);
-
     await sock.sendMessage(from, {
         react: { text: "⏳", key: msg.key }
     });
@@ -178,7 +210,6 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
 
     // ================= CACHE =================
     if (cache[key]) {
-        console.log("[CACHE HIT]");
         return sock.sendMessage(from, {
             text: cache[key]
         }, { quoted: msg });
@@ -196,7 +227,6 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
     // ================= SCRAPE =================
     let lyrics = await scrapeLyrics(url);
 
-    // ================= FAIL =================
     if (!lyrics) {
         return sock.sendMessage(from, {
             text:
@@ -210,12 +240,18 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
         }, { quoted: msg });
     }
 
+    // ================= FIX SECTION =================
+    lyrics = preserveSections(lyrics);
+    const formattedLyrics = formatLyricsForWhatsApp(lyrics);
+
     const result =
 `🎶 LIRIK DITEMUKAN
 ━━━━━━━━━━━━━━
 🎵 ${query}
 
-${lyrics}`;
+${formattedLyrics}
+━━━━━━━━━━━━━━
+🔗 Sumber: ${url}`;
 
     // ================= SAVE CACHE =================
     cache[key] = result;
