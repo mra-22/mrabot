@@ -1,6 +1,18 @@
 import axios from "axios";
 import * as cheerio from "cheerio";
+import { loadCookie } from "../cookieParser.js";
 
+const COOKIE = loadCookie("cookiesms.txt");
+
+const headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.musixmatch.com/",
+    "Cookie": COOKIE
+};
+
+// ================= NORMALIZE =================
 function normalize(q) {
     return q
         .toLowerCase()
@@ -8,23 +20,19 @@ function normalize(q) {
         .trim();
 }
 
-// ================= MUSIXMATCH SCRAPER =================
+// ================= MUSIXMATCH =================
 async function musixmatchSearch(query) {
     try {
         const url = `https://www.musixmatch.com/search/${encodeURIComponent(query)}`;
 
-        const { data } = await axios.get(url, {
-            headers: {
-                "User-Agent": "Mozilla/5.0"
-            }
-        });
+        const { data } = await axios.get(url, { headers });
 
         const $ = cheerio.load(data);
 
-        // 🔥 FIX: selector lebih aman
-        const link = $("a[href*='/lyrics/']").attr("href") ||
-                     $("a.title").attr("href") ||
-                     $("a").first().attr("href");
+        const link =
+            $("a[href*='/lyrics/']").attr("href") ||
+            $("a.title").attr("href") ||
+            $("a").first().attr("href");
 
         if (!link) return null;
 
@@ -32,22 +40,15 @@ async function musixmatchSearch(query) {
             ? link
             : "https://www.musixmatch.com" + link;
 
-        const page = await axios.get(songUrl, {
-            headers: {
-                "User-Agent": "Mozilla/5.0",
-                "Referer": url
-            }
-        });
+        const page = await axios.get(songUrl, { headers });
 
         const $$ = cheerio.load(page.data);
 
         let lyrics = "";
 
-        // 🔥 FIX: ambil container lyrics saja
         $$("span").each((i, el) => {
             const t = $$(el).text().trim();
 
-            // filter noise
             if (
                 t.length > 1 &&
                 !t.includes("Cookies") &&
@@ -66,23 +67,22 @@ async function musixmatchSearch(query) {
     }
 }
 
-// ================= AZLYRICS FALLBACK =================
+// ================= AZLYRICS =================
 async function azlyricsSearch(query) {
     try {
         const url = `https://search.azlyrics.com/search.php?q=${encodeURIComponent(query)}`;
 
         const { data } = await axios.get(url, {
-            headers: { "User-Agent": "Mozilla/5.0" }
+            headers: { "User-Agent": headers["User-Agent"] }
         });
 
         const $ = cheerio.load(data);
 
         const link = $("td a").attr("href");
-
         if (!link) return null;
 
         const page = await axios.get(link, {
-            headers: { "User-Agent": "Mozilla/5.0" }
+            headers: { "User-Agent": headers["User-Agent"] }
         });
 
         const $$ = cheerio.load(page.data);
@@ -91,19 +91,20 @@ async function azlyricsSearch(query) {
 
         return lyrics || null;
 
-    } catch {
+    } catch (e) {
+        console.log("[AZLYRICS ERROR]", e.message);
         return null;
     }
 }
 
 // ================= MAIN =================
 export async function lirik(sock, msg, from, sender, cmd, args) {
-   const query = (() => {
+    const query = (() => {
         if (Array.isArray(args)) return args.join(" ").trim();
         if (typeof args === "string") return args.trim();
         return "";
     })();
-    
+
     console.log("[LIRIK RAW]:", query);
 
     if (!query || query.length < 2) {
@@ -116,17 +117,18 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
         react: { text: "⏳", key: msg.key }
     });
 
-    let lyrics = null;
-
     const q = normalize(query);
 
     console.log("[NORMALIZED]:", q);
+    console.log("[COOKIE STATUS]:", COOKIE ? "ADA" : "KOSONG");
 
-    // ================= TRY 1: MUSIXMATCH =================
+    let lyrics = null;
+
+    // ================= TRY MUSIXMATCH =================
     console.log("[TRY] Musixmatch");
     lyrics = await musixmatchSearch(q);
 
-    // ================= TRY 2: AZLYRICS =================
+    // ================= TRY AZLYRICS =================
     if (!lyrics) {
         console.log("[TRY] AZLyrics");
         lyrics = await azlyricsSearch(q);
