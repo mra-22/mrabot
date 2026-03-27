@@ -78,19 +78,16 @@ async function azlyricsSearch(query) {
 }
 
 // ================= MAIN =================
-export async function lirik(sock, msg, from, args) {
+export async function lirik(sock, msg, from, sender, cmd, args) {
    const query = (() => {
-        if (!args) return "";
+        if (Array.isArray(args)) return args.join(" ").trim();
+        if (typeof args === "string") return args.trim();
+        return "";
+    })();
     
-        if (Array.isArray(args)) return args.join(" ");
-    
-        if (typeof args === "string") return args;
-    
-        return String(args || "");
-    })().trim();
     console.log("[LIRIK RAW]:", query);
 
-    if (!query) {
+    if (!query || query.length < 2) {
         return sock.sendMessage(from, {
             text: "Ketik: !lirik noah separuh aku"
         }, { quoted: msg });
