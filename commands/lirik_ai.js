@@ -94,7 +94,6 @@ async function scrapeLyrics(url) {
             headers: {
                 "User-Agent":
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36",
-                "Referer": "https://genius.com/"
             }
         });
 
@@ -103,17 +102,31 @@ async function scrapeLyrics(url) {
         let lyrics = "";
 
         $("div[data-lyrics-container='true']").each((i, el) => {
-            lyrics += $(el).text() + "\n";
+            let html = $(el).html();
+
+            // ubah <br> jadi newline
+            html = html.replace(/<br\s*\/?>/gi, "\n");
+
+            // hapus semua tag HTML
+            const text = cheerio.load(html).text();
+
+            lyrics += text + "\n\n";
         });
 
-        return lyrics.trim();
+        lyrics = lyrics
+            .replace(/^\d+\s+Contributors.*$/im, "") // hapus contributors
+            .replace(/Translations.*$/im, "") // hapus translation
+            .replace(/See.*Live.*$/im, "") // hapus live info
+            .replace(/\n{3,}/g, "\n\n") // rapihin newline
+            .trim();
+
+        return lyrics;
 
     } catch (e) {
         console.log("[SCRAPE ERROR]", e.message);
         return null;
     }
 }
-
 // ================= MAIN =================
 export async function lirik(sock, msg, from, sender, cmd, args) {
 
