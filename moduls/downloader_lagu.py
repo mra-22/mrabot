@@ -32,6 +32,7 @@ try:
         "noplaylist": True,
         "nocheckcertificate": True,
         "geo_bypass": True,
+        "cookiefile": "cookiesyt.txt",
         "extractor_args": {"youtube": {"player_client": ["android"]}},
     }) as ydl:
 
@@ -56,6 +57,7 @@ try:
         "noplaylist": True,
         "nocheckcertificate": True,
         "geo_bypass": True,
+        "cookiefile": "cookiesyt.txt",
         "extractor_args": {
             "youtube": {
                 "player_client": ["android", "web_creator"]
