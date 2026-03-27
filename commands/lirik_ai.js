@@ -21,28 +21,47 @@ async function musixmatchSearch(query) {
 
         const $ = cheerio.load(data);
 
-        const link = $("a.title").attr("href");
+        // 🔥 FIX: selector lebih aman
+        const link = $("a[href*='/lyrics/']").attr("href") ||
+                     $("a.title").attr("href") ||
+                     $("a").first().attr("href");
 
         if (!link) return null;
 
-        const songUrl = "https://www.musixmatch.com" + link;
+        const songUrl = link.startsWith("http")
+            ? link
+            : "https://www.musixmatch.com" + link;
 
         const page = await axios.get(songUrl, {
-            headers: { "User-Agent": "Mozilla/5.0" }
+            headers: {
+                "User-Agent": "Mozilla/5.0",
+                "Referer": url
+            }
         });
 
         const $$ = cheerio.load(page.data);
 
         let lyrics = "";
 
+        // 🔥 FIX: ambil container lyrics saja
         $$("span").each((i, el) => {
-            const t = $$(el).text();
-            if (t.length > 2) lyrics += t + "\n";
+            const t = $$(el).text().trim();
+
+            // filter noise
+            if (
+                t.length > 1 &&
+                !t.includes("Cookies") &&
+                !t.includes("Report") &&
+                !t.includes("Lyrics")
+            ) {
+                lyrics += t + "\n";
+            }
         });
 
         return lyrics.trim() || null;
 
     } catch (e) {
+        console.log("[MUSIXMATCH ERROR]", e.message);
         return null;
     }
 }
