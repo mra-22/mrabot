@@ -7,12 +7,11 @@ from yt_dlp import YoutubeDL
 # ===================== VALIDASI =====================
 if len(sys.argv) < 2:
     print("::ERROR::Query kosong", flush=True)
-    sys.exit(1)
 
 query = " ".join(sys.argv[1:])
 search = f"ytsearch1:{query}"
 
-output_dir = "./audios"  # 🔥 ganti dari /tmp biar aman di Windows/Linux
+output_dir = "./audios"
 os.makedirs(output_dir, exist_ok=True)
 
 video_url = None
@@ -32,8 +31,8 @@ try:
         "noplaylist": True,
         "nocheckcertificate": True,
         "geo_bypass": True,
-        "cookiefile": "cookiesyt.txt",
         "extractor_args": {"youtube": {"player_client": ["android"]}},
+        "cookiefile": "./moduls/cookiesyt.txt"
     }) as ydl:
 
         info = ydl.extract_info(search, download=False)
@@ -52,62 +51,72 @@ try:
 
     ydl_opts = {
         "quiet": True,
-        "format": "bestaudio",
+        "format": "best",  # 🔥 lebih aman daripada bestaudio
         "outtmpl": output_template,
         "noplaylist": True,
+
         "nocheckcertificate": True,
         "geo_bypass": True,
-        "cookiefile": "cookiesyt.txt",
-        "ignoreerrors": True,
-        "no_warnings": True,
+
         "extractor_args": {
             "youtube": {
-                "player_client": ["android", "web_creator"]
+                "player_client": ["android", "web_creator", "ios"]
             }
         },
+
         "http_headers": {
             "User-Agent": "com.google.android.youtube/19.09.37"
-        }
+        },
+
+        "cookiefile": "./moduls/cookiesyt.txt",
+        "ignoreerrors": True,
+        "no_warnings": True,
     }
 
-    with YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(video_url, download=True)
-        filepath = ydl.prepare_filename(info)
+    filepath = None
 
-    if not os.path.exists(filepath):
-        raise Exception("File tidak ditemukan setelah download")
-
-    # ===================== CONVERT =====================
-    base, _ = os.path.splitext(filepath)
-    mp3_path = base + ".mp3"
-
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-i", filepath,
-            "-vn",
-            "-acodec", "libmp3lame",
-            "-b:a", "128k",
-            mp3_path
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
-    )
-
-    # ===================== VALIDASI HASIL =====================
-    if not os.path.exists(mp3_path):
-        raise Exception("Convert gagal (ffmpeg error)")
-
-    # hapus file video
     try:
-        os.remove(filepath)
+        with YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(video_url, download=True)
+            if info:
+                filepath = ydl.prepare_filename(info)
     except:
         pass
 
-    # ===================== OUTPUT KE NODE =====================
-    print(f"::SUCCESS::{mp3_path}", flush=True)
+    # ===================== CONVERT =====================
+    mp3_path = None
 
+    if filepath and os.path.exists(filepath):
+        base, _ = os.path.splitext(filepath)
+        mp3_path = base + ".mp3"
+
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i", filepath,
+                "-vn",
+                "-acodec", "libmp3lame",
+                "-b:a", "128k",
+                mp3_path
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+
+        if os.path.exists(mp3_path):
+            try:
+                os.remove(filepath)
+            except:
+                pass
+
+            print(f"::SUCCESS::{mp3_path}", flush=True)
+        else:
+            print("::ERROR::CONVERT_FAIL", flush=True)
+    else:
+        print("::ERROR::DOWNLOAD_FAIL", flush=True)
+
+# ===================== ERROR GLOBAL =====================
 except Exception as e:
     print(f"::ERROR::{str(e)}", flush=True)
 
