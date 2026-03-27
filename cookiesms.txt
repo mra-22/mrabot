@@ -1,0 +1,13 @@
+# Netscape HTTP Cookie File
+# http://curl.haxx.se/rfc/cookie_spec.html
+# This is a generated file!  Do not edit.
+
+www.musixmatch.com	FALSE	/	FALSE	1790123819	mxm_bab	AB
+.about.musixmatch.com	TRUE	/	TRUE	0	_cfuvid	OoaQ0EwjksP3S4VlBe6hNRZY_zn0T3xo4BZEkdzYddo-1774571821.0619495-1.0.1.1-TfAW4uJLtwdSmVqoQNlDfxsJIl2HRCqXqlO2rbWZkic
+.musixmatch.com	TRUE	/	FALSE	1790123821	_vwo_uuid_v2	DD11F18CBCBFFA9EE9FDB475450C04716|3780d1cb45e09e96f2e568ac9b5f9708
+.musixmatch.com	TRUE	/	FALSE	1790123822	_vwo_uuid	DD11F18CBCBFFA9EE9FDB475450C04716
+.musixmatch.com	TRUE	/	FALSE	1777163822	_vwo_ds	3%241774571821%3A5.42791165%3A%3A%3A%3A%3A1774571821%3A1774571821%3A1
+.musixmatch.com	TRUE	/	FALSE	1783211822	_vis_opt_s	1%7C
+.musixmatch.com	TRUE	/	FALSE	0	_vis_opt_test_cookie	1
+.musixmatch.com	TRUE	/	FALSE	1774573624	_vwo_sn	0%3A1%3A%3A%3A%3A%3A1
+.musixmatch.com	TRUE	/	TRUE	1782347872	musixmatchUserToken	%7B%22tokens%22%3A%7B%22mxm-account-v1.0%22%3A%222603e874b3fde06409981a9b54bff4b37c02faa6f484abddda4d%22%2C%22mxm-com-v1.0%22%3A%22260396505ca82597767cd8ee9626b39ceefba04917709ffc2fb5%22%2C%22web-desktop-app-v1.0%22%3A%2226036f6dcc2cc8a4ebbd761a347cd603eee3ae6f16ced77642e2%22%2C%22musixmatch-podcasts-v2.0%22%3A%22260316bf61b7f78ee54a7954f7d362aca40ec01949cc707c0b8f%22%2C%22mxm-pro-web-v1.0%22%3A%2226036071b3665231a4a5846cc78539fa298b411170742350666e%22%2C%22musixmatch-publishers-v2.0%22%3A%222603dd98ffab6010d541764356666060807ac3fcbebb5b9284f0%22%2C%22mxm-experiments-unstable-v1.0%22%3A%222603e4c312d8ed87a79a4741422c5471dc8aadcba04605830a49%22%2C%22mxm-experiments-v1.0%22%3A%22260390521f4428aef25588f6053a5e55a6a0719e5f34a66c71eb%22%7D%2C%22version%22%3A1%7D
