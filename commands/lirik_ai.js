@@ -26,98 +26,6 @@ function normalize(text) {
         .trim();
 }
 
-// ================= CLEAN TITLE =================
-function cleanTitle(title) {
-    return title
-        .replace(/song and lyrics by/gi, "")
-        .replace(/lyrics by/gi, "")
-        .replace(/lirik/gi, "")
-        .replace(/\(.*?\)/g, "")
-        .replace(/\|.*$/g, "")
-        .trim();
-}
-
-// ================= AI DETECT =================
-function detectArtistTitle(raw, userQuery) {
-    raw = cleanTitle(raw);
-
-    let artist = "";
-    let title = "";
-
-    if (raw.includes("-")) {
-        const parts = raw.split("-").map(s => s.trim());
-
-        if (parts.length >= 2) {
-            title = parts[0];
-            artist = parts[1];
-        }
-    }
-
-    if (!artist || !title) {
-        const q = normalize(userQuery).split(" ");
-
-        if (q.length >= 2) {
-            artist = q.slice(-2).join(" ");
-            title = q.slice(0, -2).join(" ");
-        } else {
-            title = userQuery;
-        }
-    }
-
-    return {
-        artist: artist.trim(),
-        title: title.trim(),
-        full: `${artist} ${title}`.trim()
-    };
-}
-
-// ================= SERPER SEARCH =================
-async function searchSongSmart(query) {
-    try {
-        const { data } = await axios.post(
-            "https://google.serper.dev/search",
-            { q: query + " lagu" },
-            {
-                headers: {
-                    "X-API-KEY": process.env.SERPER_API_KEY,
-                    "Content-Type": "application/json",
-                },
-            }
-        );
-
-        const results = data.organic || [];
-
-        for (const r of results) {
-            const title = r.title.toLowerCase();
-
-            if (
-                title.includes("lirik") ||
-                title.includes("lyrics") ||
-                title.includes("-")
-            ) {
-                console.log("[SERPER RAW]:", r.title);
-
-                const detected = detectArtistTitle(r.title, query);
-
-                console.log(
-                    "[AI DETECT FIX]:",
-                    detected.artist,
-                    "-",
-                    detected.title
-                );
-
-                return detected;
-            }
-        }
-
-        return { artist: "", title: query, full: query };
-
-    } catch (e) {
-        console.log("[SERPER ERROR]", e.message);
-        return { artist: "", title: query, full: query };
-    }
-}
-
 // ================= API FALLBACK =================
 async function lyricsAPI(artist, title) {
     try {
@@ -129,29 +37,67 @@ async function lyricsAPI(artist, title) {
     }
 }
 
-// ================= GOOGLE SCRAPER =================
-async function scrapeLyricsFromGoogle(query) {
+// ================= SERPER (AMBIL LINK) =================
+async function searchSongSmart(query) {
     try {
-        const url = `https://www.google.com/search?q=${encodeURIComponent(query + " lirik")}`;
+        const { data } = await axios.post(
+            "https://google.serper.dev/search",
+            { q: query + " lirik" },
+            {
+                headers: {
+                    "X-API-KEY": process.env.SERPER_API_KEY,
+                    "Content-Type": "application/json",
+                },
+            }
+        );
 
+        const results = data.organic || [];
+
+        for (const r of results) {
+            const link = r.link || "";
+
+            // 🔥 prioritas website lirik
+            if (
+                link.includes("kapanlagi") ||
+                link.includes("musixmatch") ||
+                link.includes("lirik") ||
+                link.includes("lyrics")
+            ) {
+                console.log("[SERPER LINK]:", link);
+                return link;
+            }
+        }
+
+        return null;
+
+    } catch (e) {
+        console.log("[SERPER ERROR]", e.message);
+        return null;
+    }
+}
+
+// ================= SCRAPE WEBSITE =================
+async function scrapeFromWebsite(url) {
+    try {
         const { data } = await axios.get(url, {
             headers: {
-                "User-Agent": "Mozilla/5.0",
-            },
+                "User-Agent": "Mozilla/5.0"
+            }
         });
 
         const $ = cheerio.load(data);
 
         let lyrics = "";
 
-        $("span").each((i, el) => {
+        // 🔥 ambil semua text panjang
+        $("p, div").each((i, el) => {
             const text = $(el).text().trim();
 
             if (
-                text.length > 15 &&
-                !text.includes("Google") &&
-                !text.includes("Search") &&
-                !text.includes("http")
+                text.length > 20 &&
+                !text.includes("ADVERTISEMENT") &&
+                !text.includes("Baca juga") &&
+                !text.includes("Lihat juga")
             ) {
                 lyrics += text + "\n";
             }
@@ -159,13 +105,13 @@ async function scrapeLyricsFromGoogle(query) {
 
         lyrics = lyrics
             .split("\n")
-            .filter(line => line.length > 5)
+            .filter(l => l.length > 5)
             .join("\n");
 
-        return lyrics.trim() || null;
+        return lyrics || null;
 
     } catch (e) {
-        console.log("[GOOGLE SCRAPE ERROR]", e.message);
+        console.log("[SCRAPE ERROR]", e.message);
         return null;
     }
 }
@@ -198,41 +144,26 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
         }, { quoted: msg });
     }
 
-    // ================= SMART SEARCH =================
-    const detected = await searchSongSmart(query);
-
     let lyrics = null;
 
     // ================= TRY 1 =================
     try {
-        console.log("[TRY] lyrics-finder AI");
-        lyrics = await lyricsFinder(detected.artist, detected.title);
+        console.log("[TRY] lyrics-finder");
+        lyrics = await lyricsFinder("", query);
     } catch {}
 
     // ================= TRY 2 =================
-    if (!lyrics) {
-        console.log("[TRY] full query");
-        lyrics = await lyricsFinder("", detected.full);
+    const link = await searchSongSmart(query);
+
+    if (!lyrics && link) {
+        console.log("[TRY] SCRAPE WEBSITE");
+        lyrics = await scrapeFromWebsite(link);
     }
 
     // ================= TRY 3 =================
-    if (!lyrics && detected.artist) {
+    if (!lyrics) {
         console.log("[TRY] API fallback");
-        lyrics = await lyricsAPI(detected.artist, detected.title);
-    }
-
-    // ================= TRY 4 =================
-    if (!lyrics) {
-        console.log("[TRY] original query");
-        lyrics = await lyricsFinder("", query);
-    }
-
-    // ================= TRY 5 (🔥 PENYELAMAT) =================
-    if (!lyrics) {
-        console.log("[TRY] GOOGLE SCRAPE");
-        lyrics = await scrapeLyricsFromGoogle(
-            `${detected.title} ${detected.artist}`
-        );
+        lyrics = await lyricsAPI("", query);
     }
 
     // ================= FAIL =================
@@ -257,8 +188,7 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
     const result =
 `🎶 LIRIK DITEMUKAN
 ━━━━━━━━━━━━━━
-🎤 ${detected.artist || "-"}
-🎵 ${detected.title || query}
+🎵 ${query}
 
 ${lyrics}`;
 
