@@ -34,7 +34,38 @@ function normalize(text) {
         .trim();
 }
 
-// ================= SERPER SEARCH =================
+function cleanTitle(title) {
+    return title
+        .replace(/song and lyrics by/gi, "")
+        .replace(/lyrics by/gi, "")
+        .replace(/lirik/gi, "")
+        .replace(/\(.*?\)/g, "")
+        .replace(/\|.*$/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+// 🔥 DETECT ARTIST + TITLE
+function formatTitleSmart(title) {
+    title = cleanTitle(title);
+
+    // contoh: "Ijuk - Iyeth Bustami"
+    if (title.includes("-")) {
+        const parts = title.split("-").map(s => s.trim());
+
+        if (parts.length >= 2) {
+            const left = parts[0];
+            const right = parts[1];
+
+            // balik jadi Artist - Title
+            return `${right} ${left}`;
+        }
+    }
+
+    // fallback
+    return title;
+}
+
 async function searchSongSmart(query) {
     try {
         const { data } = await axios.post(
@@ -53,18 +84,22 @@ async function searchSongSmart(query) {
         const results = data.organic || [];
 
         for (const r of results) {
-            const title = r.title.toLowerCase();
+            const title = r.title;
 
             if (
-                title.includes("lirik") ||
-                title.includes("lyrics") ||
+                title.toLowerCase().includes("lyrics") ||
+                title.toLowerCase().includes("lirik") ||
                 title.includes("-")
             ) {
-                console.log("[SERPER FOUND]:", r.title);
+                console.log("[SERPER RAW]:", title);
 
-                return r.title
-                    .replace(/lirik|lyrics/gi, "")
-                    .trim();
+                const clean = cleanTitle(title);
+                const smart = formatTitleSmart(clean);
+
+                console.log("[SERPER CLEAN]:", clean);
+                console.log("[SERPER FINAL]:", smart);
+
+                return smart;
             }
         }
 
@@ -74,7 +109,6 @@ async function searchSongSmart(query) {
         return query;
     }
 }
-
 // ================= API FALLBACK =================
 async function lyricsAPI(query) {
     try {
