@@ -11,8 +11,9 @@ import { getGroupConfig } from './moduls/config.js';
 const logStream = fs.createWriteStream("bot.log", { flags: "a" })
 import antiStatusMention from './lib/AntiStatus.js'
 const origLog = console.log
-import express from "express";       // Untuk server web
-import qrcode from "qrcode";         // Untuk generate QR menjadi image
+import express from "express";
+import qrcode from "qrcode"; 
+import axios from "axios"; 
 console.log = function (...args) {
 
     const text = args.join(" ")
@@ -854,9 +855,18 @@ async function startBot() {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
-            qrGlobal = qr; // simpan QR terbaru
-            console.log("📱 QR tersedia, buka /qr di browser untuk scan");
-            // jangan pakai qrcode.generate(qr) lagi
+            qrGlobal = qr;
+
+            console.log("📱 QR didapat, kirim ke Flask...");
+
+            try {
+                await axios.post("https://mrabot-production.up.railway.app/set-qr", {
+                    qr: qr
+                });
+                console.log("✅ QR berhasil dikirim ke Flask");
+            } catch (err) {
+                console.log("❌ Gagal kirim QR:", err.message);
+            }
         }
 
         if (connection === "close") {
