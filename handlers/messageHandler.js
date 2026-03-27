@@ -5,7 +5,8 @@ import { ownerCommand } from '../commands/owner.js';
 import { adminMenuCommand } from '../commands/admin.js';
 import { omCommand, gambarCommand, cuacaCommand, vidCommand } from '../commands/ai.js';
 import { sendMediaBack } from '../commands/q.js';
-import { downloaderCommand, play, Apk, lirik } from '../commands/downloader.js';
+import { downloaderCommand, play, Apk} from '../commands/downloader.js';
+import { lirik } from '../commands/lirik_ai.js';
 import { userCommands, claimVidCommand, tflimitCommand, addLimitCommand, setLimitCommand, remLimitCommand } from "../commands/user.js";
 import { bucinCommands } from "../commands/bucin.js";
 import {
