@@ -50,14 +50,18 @@ try:
 except Exception as e:
     print(f"::ERROR::{str(e)}", flush=True)
 
-# ===================== CACHE CHECK =====================
-cache_name = get_cache_name(video_url if video_url else query)
+# ===================== CACHE =====================
+cache_key = video_url if video_url else query
+cache_name = get_cache_name(cache_key)
 mp3_path = f"{output_dir}/{cache_name}.mp3"
 
 if os.path.exists(mp3_path):
     print(f"::SUCCESS::{mp3_path}", flush=True)
+
 else:
     # ===================== DOWNLOAD =====================
+    filepath = None
+
     try:
         ydl_opts = {
             "quiet": True,
@@ -71,6 +75,7 @@ else:
 
             "ignoreerrors": True,
             "no_warnings": True,
+            "skip_unavailable_fragments": True,
 
             "extractor_args": {
                 "youtube": {
@@ -83,15 +88,25 @@ else:
             }
         }
 
-        filepath = None
-
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=True)
-            if info:
-                filepath = ydl.prepare_filename(info)
 
+            if info:
+                try:
+                    filepath = ydl.prepare_filename(info)
+                except:
+                    filepath = None
+
+    except Exception as e:
+        print(f"::ERROR::{str(e)}", flush=True)
+
+    # ===================== VALIDASI FILE =====================
+    if not filepath or not os.path.exists(filepath):
+        print("::ERROR::DOWNLOAD_FAIL", flush=True)
+
+    else:
         # ===================== CONVERT =====================
-        if filepath and os.path.exists(filepath):
+        try:
             subprocess.run(
                 [
                     "ffmpeg",
@@ -113,16 +128,14 @@ else:
                     pass
 
                 print(f"::SUCCESS::{mp3_path}", flush=True)
+
             else:
                 print("::ERROR::CONVERT_FAIL", flush=True)
 
-        else:
-            print("::ERROR::DOWNLOAD_FAIL", flush=True)
+        except Exception as e:
+            print(f"::ERROR::{str(e)}", flush=True)
 
-    except Exception as e:
-        print(f"::ERROR::{str(e)}", flush=True)
-
-# ===================== INFO =====================
+# ===================== INFO (WAJIB) =====================
 if video_url:
     print(f"::TITLE::{title}", flush=True)
     print(f"::URL::{video_url}", flush=True)
