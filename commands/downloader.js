@@ -3,6 +3,7 @@ import path from "path";
 import fs from "fs";
 import util from "util";
 import { getSenderRawId, resolveToMainId } from "../moduls/user.js";
+import axios from "axios";
 
 const execPromise = util.promisify(exec);
 const pythonCmd = process.platform === "win32" ? "py" : "python3";
@@ -230,20 +231,6 @@ export async function downloaderCommand({ sock, msg, from, text }) {
 /* ============================================================
    ===============         PLAY MUSIC        ==================
    ============================================================*/
-async function searchYoutube(query) {
-    try {
-        const res = await fetch(`https://ytsearch-api.onrender.com/search?q=${encodeURIComponent(query)}`);
-        const json = await res.json();
-
-        if (!json || !json.data || !json.data.length) return null;
-
-        return json.data[0];
-    } catch {
-        return null;
-    }
-}
-
-// ===================== MAIN PLAY =====================
 export async function play(sock, msg, from, sender, cmd, args) {
     if (!Array.isArray(args)) args = [];
     const query = args.join(" ");
@@ -259,61 +246,52 @@ export async function play(sock, msg, from, sender, cmd, args) {
     let success = false;
     let videoUrl = null;
 
-    // ==============================
-    // 🔍 STEP 1: SEARCH
-    // ==============================
-    const result = await searchYoutube(query);
-
-    if (!result) {
-        await sock.sendMessage(from, {
-            text: "❌ Lagu tidak ditemukan"
-        }, { quoted: msg });
-
-        return;
-    }
-
-    const title = result.title;
-    videoUrl = result.url;
-    const thumbnail = result.thumbnail;
-    const uploader = result.author?.name || "-";
-
-    // durasi bisa string "4:12"
-    const duration = result.timestamp || "0:00";
-
-    const caption = `╭━━━〔 🎵 PLAY MUSIC 〕━━━⬣
-┃ 🎧 Judul   : ${title}
-┃ 📺 Channel : ${uploader}
-┃ ⏱️ Durasi  : ${duration}
-╰━━━━━━━━━━━━━━━━⬣`;
-
-    // kirim thumbnail dulu
-    if (thumbnail) {
-        await sock.sendMessage(from, {
-            image: { url: thumbnail },
-            caption
-        }, { quoted: msg });
-    } else {
-        await sock.sendMessage(from, { text: caption }, { quoted: msg });
-    }
-
-    // ==============================
-    // ⬇️ STEP 2: DOWNLOAD VIA PYTHON
-    // ==============================
     try {
         const { stdout } = await execPromise(
-            `python3 ./moduls/downloader_lagu.py "${videoUrl}"`
+            `python3 ./moduls/downloader_lagu.py "${query}"`
         );
 
         console.log(stdout);
 
         const mp3Match = stdout.match(/::SUCCESS::(.+)/);
+        const titleMatch = stdout.match(/::TITLE::(.+)/);
+        const urlMatch = stdout.match(/::URL::(.+)/);
+        const thumbMatch = stdout.match(/::THUMB::(.+)/);
+        const uploaderMatch = stdout.match(/::UPLOADER::(.+)/);
+        const durationMatch = stdout.match(/::DURATION::(.+)/);
 
+        const title = titleMatch ? titleMatch[1].trim() : query;
+        videoUrl = urlMatch ? urlMatch[1].trim() : null;
+        const thumbnail = thumbMatch ? thumbMatch[1].trim() : null;
+        const uploader = uploaderMatch ? uploaderMatch[1].trim() : "-";
+        const duration = durationMatch ? parseInt(durationMatch[1]) : 0;
+
+        // 🎨 CAPTION
+        const caption = `╭━━━〔 🎵 PLAY MUSIC 〕━━━⬣
+┃ 🎧 Judul   : ${title}
+┃ 📺 Channel : ${uploader}
+┃ ⏱️ Durasi  : ${formatDuration(duration)}
+╰━━━━━━━━━━━━━━━━⬣`;
+
+        // 📸 KIRIM THUMBNAIL
+        if (thumbnail) {
+            await sock.sendMessage(from, {
+                image: { url: thumbnail },
+                caption
+            }, { quoted: msg });
+        } else {
+            await sock.sendMessage(from, { text: caption }, { quoted: msg });
+        }
+
+        // 🎧 KIRIM AUDIO JIKA ADA
         if (mp3Match) {
             const path = mp3Match[1].trim();
 
             if (fs.existsSync(path)) {
+                const buffer = fs.readFileSync(path);
+
                 await sock.sendMessage(from, {
-                    audio: fs.readFileSync(path),
+                    audio: buffer,
                     mimetype: "audio/mpeg",
                     fileName: `${title}.mp3`
                 }, { quoted: msg });
@@ -324,62 +302,34 @@ export async function play(sock, msg, from, sender, cmd, args) {
         }
 
     } catch (e) {
-        console.log("❌ yt-dlp gagal:", e.message);
+        console.log("❌ yt-dlp gagal");
     }
 
-    // ==============================
-    // 🔥 STEP 3: MULTI FALLBACK
-    // ==============================
+    // 🔥 FALLBACK AUDIO
     if (!success && videoUrl) {
+        try {
+            const res = await fetch(
+                `https://ytdl-api.caliphdev.com/download/audio?url=${encodeURIComponent(videoUrl)}`
+            );
 
-        const apis = [
-            async () => {
-                const res = await fetch(`https://ytdl-api.caliphdev.com/download/audio?url=${encodeURIComponent(videoUrl)}`);
-                const json = await res.json();
-                return json.result?.download_url;
-            },
-            async () => {
-                return `https://api.vevioz.com/api/button/mp3/${encodeURIComponent(videoUrl)}`;
-            },
-            async () => {
-                const res = await fetch("https://api.cobalt.tools/api/json", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ url: videoUrl })
-                });
-                const json = await res.json();
-                return json.url;
+            const json = await res.json();
+
+            if (json.result?.download_url) {
+                await sock.sendMessage(from, {
+                    audio: { url: json.result.download_url },
+                    mimetype: "audio/mpeg"
+                }, { quoted: msg });
+
+                success = true;
             }
-        ];
-
-        for (let i = 0; i < apis.length; i++) {
-            try {
-                console.log(`🔄 fallback ${i + 1}`);
-
-                const url = await apis[i]();
-
-                if (url) {
-                    await sock.sendMessage(from, {
-                        audio: { url },
-                        mimetype: "audio/mpeg"
-                    }, { quoted: msg });
-
-                    success = true;
-                    break;
-                }
-
-            } catch (e) {
-                console.log("❌ fallback error:", e.message);
-            }
+        } catch (e) {
+            console.log("❌ fallback gagal");
         }
     }
 
-    // ==============================
-    // ❌ TOTAL FAIL
-    // ==============================
-    if (!success) {
+    if (!success && videoUrl) {
         await sock.sendMessage(from, {
-            text: `❌ Semua server gagal.\nCoba lagi nanti.`
+            text: `🎧 Tidak bisa kirim audio.\n${videoUrl}`
         }, { quoted: msg });
     }
 
@@ -387,6 +337,7 @@ export async function play(sock, msg, from, sender, cmd, args) {
         react: { text: success ? "✅" : "❌", key: msg.key }
     });
 }
+
 /* ============================================================
    ==================  DOWNLOAD APK  ==========================
    ============================================================*/
