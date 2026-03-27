@@ -33,34 +33,28 @@ function cleanTitle(title) {
         .replace(/lirik/gi, "")
         .replace(/\(.*?\)/g, "")
         .replace(/\|.*$/g, "")
-        .replace(/\s+/g, " ")
         .trim();
 }
 
-// ================= AI DETECT ARTIST & TITLE =================
+// ================= AI DETECT =================
 function detectArtistTitle(raw, userQuery) {
     raw = cleanTitle(raw);
-
-    const parts = raw.split("-").map(s => s.trim());
 
     let artist = "";
     let title = "";
 
-    if (parts.length >= 2) {
-        const left = parts[0];
-        const right = parts[1];
+    // 🔥 FORMAT: "Judul - Artis"
+    if (raw.includes("-")) {
+        const parts = raw.split("-").map(s => s.trim());
 
-        // 🔥 AI RULE:
-        // kalau kanan lebih panjang → biasanya artist
-        if (right.length > left.length) {
-            artist = right;
-            title = left;
-        } else {
-            artist = left;
-            title = right;
+        if (parts.length >= 2) {
+            title = parts[0];
+            artist = parts[1];
         }
-    } else {
-        // fallback pakai query user
+    }
+
+    // 🔥 fallback ke query user
+    if (!artist || !title) {
         const q = normalize(userQuery).split(" ");
 
         if (q.length >= 2) {
@@ -95,27 +89,28 @@ async function searchSongSmart(query) {
         const results = data.organic || [];
 
         for (const r of results) {
-            const title = r.title;
+            const title = r.title.toLowerCase();
 
             if (
-                title.toLowerCase().includes("lyrics") ||
-                title.toLowerCase().includes("lirik") ||
+                title.includes("lirik") ||
+                title.includes("lyrics") ||
                 title.includes("-")
             ) {
-                console.log("[SERPER RAW]:", title);
+                console.log("[SERPER RAW]:", r.title);
 
-                const detected = detectArtistTitle(title, query);
+                const detected = detectArtistTitle(r.title, query);
 
-                console.log("[AI DETECT]:", detected);
+                console.log("[AI DETECT FIX]:", detected.artist, "-", detected.title);
 
                 return detected;
             }
         }
 
-        return { full: query, artist: "", title: query };
+        return { artist: "", title: query, full: query };
+
     } catch (e) {
         console.log("[SERPER ERROR]", e.message);
-        return { full: query, artist: "", title: query };
+        return { artist: "", title: query, full: query };
     }
 }
 
@@ -137,7 +132,7 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
 
     if (!query) {
         return sock.sendMessage(from, {
-            text: "Contoh: !lirik ijuk iyeth bustami"
+            text: "Contoh: !lirik bahagia lagi piche kota"
         }, { quoted: msg });
     }
 
@@ -150,6 +145,7 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
     const cache = loadCache();
     const key = normalize(query);
 
+    // ================= CACHE =================
     if (cache[key]) {
         console.log("[CACHE HIT]");
         return sock.sendMessage(from, {
@@ -157,7 +153,7 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
         }, { quoted: msg });
     }
 
-    // ================= AI SEARCH =================
+    // ================= SMART SEARCH =================
     const detected = await searchSongSmart(query);
 
     let lyrics = null;
@@ -194,9 +190,9 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
 
 🔎 Query: ${query}
 
-💡 Coba:
-- tambahkan artis
-- contoh: ijuk iyeth bustami`
+💡 Tips:
+- tambah artis
+- contoh: bahagia lagi piche kota`
         }, { quoted: msg });
     }
 
