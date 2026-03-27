@@ -1,4 +1,5 @@
 import axios from "axios";
+import * as cheerio from "cheerio";
 import fs from "fs";
 import { chromium } from "playwright";
 
@@ -23,20 +24,35 @@ function normalize(text) {
 // ================= CLEAN =================
 function cleanLyrics(text) {
     return text
+        .replace(/Advertisement/gi, "")
+        .replace(/Embed|Share|Copy/gi, "")
+        .replace(/\{.*?\}/g, "")
+        .replace(/@context|schema\.org/gi, "")
         .replace(/\[.*?\]/g, "")
         .replace(/\s{2,}/g, " ")
         .replace(/\n{2,}/g, "\n\n")
         .trim();
 }
 
-// ================= SEARCH MUSIXMATCH =================
-async function searchMusixmatch(query) {
+// ================= FILTER =================
+function filterLines(text) {
+    return text
+        .split("\n")
+        .map(l => l.trim())
+        .filter(l =>
+            l.length > 3 &&
+            !l.match(/(http|www|function|var |let |const |return)/i) &&
+            !l.match(/(HOME|BERITA|VIDEO|IKLAN)/i)
+        )
+        .join("\n");
+}
+
+// ================= SERPER SEARCH =================
+async function searchGoogle(query) {
     try {
         const { data } = await axios.post(
             "https://google.serper.dev/search",
-            {
-                q: `${query} site:musixmatch.com lyrics`
-            },
+            { q: query + " lirik lagu musixmatch" },
             {
                 headers: {
                     "X-API-KEY": process.env.SERPER_API_KEY,
@@ -47,55 +63,63 @@ async function searchMusixmatch(query) {
 
         const results = data.organic || [];
 
+        let musix = null;
+        let fallback = null;
+
         for (const r of results) {
-            if (r.link.includes("musixmatch.com")) {
-                return r.link;
+            const link = r.link;
+
+            if (link.includes("musixmatch") && !musix) {
+                musix = link;
+            }
+
+            if (
+                (link.includes("kapanlagi") ||
+                 link.includes("azlyrics") ||
+                 link.includes("genius")) &&
+                !fallback
+            ) {
+                fallback = link;
             }
         }
 
-        return null;
+        console.log("[MUSIX URL]:", musix);
+        console.log("[FALLBACK URL]:", fallback);
+
+        return { musix, fallback };
 
     } catch (e) {
         console.log("[SEARCH ERROR]", e.message);
-        return null;
+        return {};
     }
 }
 
-// ================= PLAYWRIGHT SCRAPER =================
+// ================= PLAYWRIGHT MUSIXMATCH =================
 async function scrapeMusixmatch(url) {
     let browser;
 
     try {
-        // 🔥 FIX URL (hapus /ko /id dll)
-        url = url.replace(/musixmatch\.com\/[a-z]{2}\//, "musixmatch.com/");
-
-        console.log("[PLAYWRIGHT URL]:", url);
-
-        browser = await chromium.launch({
-            headless: true,
-        });
-
+        browser = await chromium.launch({ headless: true });
         const page = await browser.newPage();
 
-        await page.setExtraHTTPHeaders({
-            "User-Agent":
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.9",
+        await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
+
+        // tunggu muncul lirik (selector lebih fleksibel)
+        await page.waitForSelector("div[class*=Lyrics__Container], span", {
+            timeout: 20000
         });
 
-        await page.goto(url, { waitUntil: "domcontentloaded" });
-
-        // ================= AUTO SCROLL =================
+        // auto scroll biar full lirik kebuka
         await page.evaluate(async () => {
-            await new Promise((resolve) => {
-                let totalHeight = 0;
-                const distance = 300;
+            await new Promise(resolve => {
+                let total = 0;
+                let distance = 500;
 
                 const timer = setInterval(() => {
                     window.scrollBy(0, distance);
-                    totalHeight += distance;
+                    total += distance;
 
-                    if (totalHeight >= document.body.scrollHeight) {
+                    if (total >= document.body.scrollHeight) {
                         clearInterval(timer);
                         resolve();
                     }
@@ -103,29 +127,61 @@ async function scrapeMusixmatch(url) {
             });
         });
 
-        // tunggu container lirik
-        await page.waitForSelector("div[class*='Lyrics__Container']", {
-            timeout: 10000,
-        });
+        // ambil semua teks
+        const lyrics = await page.evaluate(() => {
+            let text = "";
 
-        // ================= AMBIL LIRIK =================
-        const lyrics = await page.$$eval(
-            "div[class*='Lyrics__Container']",
-            (els) =>
-                els
-                    .map((el) => el.innerText)
-                    .join("\n")
-        );
+            document.querySelectorAll("div[class*=Lyrics__Container], span").forEach(el => {
+                const t = el.innerText?.trim();
+                if (t && t.length > 1) {
+                    text += t + "\n";
+                }
+            });
+
+            return text;
+        });
 
         await browser.close();
 
-        if (!lyrics || lyrics.length < 50) return null;
-
-        return cleanLyrics(lyrics);
+        return filterLines(cleanLyrics(lyrics));
 
     } catch (e) {
-        if (browser) await browser.close();
         console.log("[PLAYWRIGHT ERROR]", e.message);
+        if (browser) await browser.close();
+        return null;
+    }
+}
+
+// ================= FALLBACK SCRAPER =================
+async function scrapeFallback(url) {
+    try {
+        const { data } = await axios.get(url, {
+            headers: { "User-Agent": "Mozilla/5.0" }
+        });
+
+        const $ = cheerio.load(data);
+
+        let lyrics = "";
+
+        if (url.includes("kapanlagi")) {
+            lyrics = $("#lirik-main-content").text();
+        } else if (url.includes("azlyrics")) {
+            lyrics = $("div.lyricsh").next().text();
+        } else if (url.includes("genius")) {
+            lyrics = $('[data-lyrics-container="true"]').text();
+        }
+
+        if (!lyrics || lyrics.length < 50) {
+            $("p").each((i, el) => {
+                const t = $(el).text().trim();
+                if (t.length > 30) lyrics += t + "\n";
+            });
+        }
+
+        return filterLines(cleanLyrics(lyrics));
+
+    } catch (e) {
+        console.log("[SCRAPE ERROR]", e.message);
         return null;
     }
 }
@@ -159,29 +215,33 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
     }
 
     // ================= SEARCH =================
-    const url = await searchMusixmatch(query);
+    const { musix, fallback } = await searchGoogle(query);
 
-    if (!url) {
-        return sock.sendMessage(from, {
-            text: "❌ Lagu tidak ditemukan"
-        }, { quoted: msg });
+    let lyrics = null;
+
+    // ================= PRIORITAS MUSIXMATCH =================
+    if (musix) {
+        console.log("[TRY] MUSIXMATCH PLAYWRIGHT");
+        lyrics = await scrapeMusixmatch(musix);
     }
 
-    console.log("[MUSIX URL]:", url);
-
-    // ================= SCRAPE =================
-    let lyrics = await scrapeMusixmatch(url);
+    // ================= FALLBACK =================
+    if (!lyrics && fallback) {
+        console.log("[TRY] FALLBACK SCRAPER");
+        lyrics = await scrapeFallback(fallback);
+    }
 
     // ================= FAIL =================
-    if (!lyrics) {
+    if (!lyrics || lyrics.length < 50) {
         return sock.sendMessage(from, {
             text:
-`❌ Gagal ambil lirik dari Musixmatch
+`❌ Lirik tidak ditemukan
 
 🔎 Query: ${query}
 
-💡 Coba tambah artis
-contoh: bahagia lagi piche kota`
+💡 Tips:
+- tambah artis
+- contoh: bahagia lagi piche kota`
         }, { quoted: msg });
     }
 
