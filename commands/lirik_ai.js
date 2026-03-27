@@ -21,43 +21,44 @@ function normalize(text) {
     return text.toLowerCase().replace(/[^a-z0-9\s]/g, "").trim();
 }
 
+// ================= EXTRACT ARTIST =================
+function extractArtistFromQuery(query) {
+    const parts = query.split(" ");
+    if (parts.length >= 2) return parts.slice(-2).join(" ");
+    return "-";
+}
+
+// ================= FORMAT WA =================
 function formatLyricsWA(lyrics, title, artist) {
-
-    // ================= FIX BARIS NYATU =================
     lyrics = lyrics
-        .replace(/([a-z])([A-Z])/g, "$1\n$2") // huruf kecil ke besar
-        .replace(/([a-z])([0-9])/g, "$1\n$2")
-        .replace(/\./g, ".\n")
-        .replace(/,/g, ",\n");
+        .replace(/\r/g, "")
+        .replace(/\n{2,}/g, "\n\n")
+        .trim();
 
-    // ================= SPLIT =================
     let lines = lyrics.split("\n")
         .map(l => l.trim())
-        .filter(l => l.length > 0);
+        .filter(l =>
+            l.length > 0 &&
+            !l.match(/(unconditional|devotion|cookies|label)/i)
+        );
 
-    // ================= BENTUK BAIT =================
     let result = "";
     let bait = [];
 
     for (let i = 0; i < lines.length; i++) {
         bait.push(lines[i]);
 
-        // tiap 4 baris = 1 bait
-        if (bait.length === 4) {
+        if (bait.length >= 4) {
             result += bait.join("\n") + "\n\n";
             bait = [];
         }
     }
 
-    // sisa baris
-    if (bait.length > 0) {
-        result += bait.join("\n") + "\n\n";
-    }
+    if (bait.length) result += bait.join("\n") + "\n\n";
 
-    // ================= HEADER ESTETIK =================
-    return `🎶 *${title || "Lirik Lagu"}*
+    return `🎶 *${title}*
 ━━━━━━━━━━━━━━
-🎤 ${artist || "-"}
+🎤 ${artist}
 
 ${result.trim()}
 ━━━━━━━━━━━━━━
@@ -70,10 +71,7 @@ function cleanLyrics(text) {
         .replace(/Advertisement/gi, "")
         .replace(/Embed|Share|Copy/gi, "")
         .replace(/\{.*?\}/g, "")
-        .replace(/@context|schema\.org/gi, "")
         .replace(/\[.*?\]/g, "")
-        .replace(/\s{2,}/g, " ")
-        .replace(/\n{2,}/g, "\n\n")
         .replace(/Performance Cookies/gi, "")
         .replace(/Targeting Cookies/gi, "")
         .replace(/Consent/gi, "")
@@ -88,21 +86,15 @@ function filterLines(text) {
         .split("\n")
         .map(l => l.trim())
         .filter(l =>
-            l.length > 3 &&
-
-            // ❌ buang sampah musixmatch
-            !l.match(/(cookie|consent|label|privacy|terms|leg\.interest)/i) &&
-
-            // ❌ buang web junk
-            !l.match(/(http|www|function|var |let |const |return)/i) &&
-
-            // ❌ buang menu web indo
-            !l.match(/(HOME|BERITA|VIDEO|IKLAN)/i)
+            l.length > 2 &&
+            !l.match(/(cookie|consent|label|privacy|terms)/i) &&
+            !l.match(/(unconditional|devotion|spiritual)/i) &&
+            !l.match(/(http|www|function|var |let |const)/i)
         )
         .join("\n");
 }
 
-// ================= SERPER SEARCH =================
+// ================= SEARCH =================
 async function searchGoogle(query) {
     try {
         const { data } = await axios.post(
@@ -124,9 +116,7 @@ async function searchGoogle(query) {
         for (const r of results) {
             const link = r.link;
 
-            if (link.includes("musixmatch") && !musix) {
-                musix = link;
-            }
+            if (link.includes("musixmatch") && !musix) musix = link;
 
             if (
                 (link.includes("kapanlagi") ||
@@ -138,8 +128,8 @@ async function searchGoogle(query) {
             }
         }
 
-        console.log("[MUSIX URL]:", musix);
-        console.log("[FALLBACK URL]:", fallback);
+        console.log("[MUSIX]:", musix);
+        console.log("[FALLBACK]:", fallback);
 
         return { musix, fallback };
 
@@ -149,7 +139,7 @@ async function searchGoogle(query) {
     }
 }
 
-// ================= PLAYWRIGHT MUSIXMATCH =================
+// ================= MUSIXMATCH PLAYWRIGHT =================
 async function scrapeMusixmatch(url) {
     let browser;
 
@@ -159,12 +149,11 @@ async function scrapeMusixmatch(url) {
 
         await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
 
-        // tunggu muncul lirik (selector lebih fleksibel)
-        await page.waitForSelector("div[class*=Lyrics__Container], span", {
-            timeout: 20000
+        await page.waitForSelector("div[class*='Lyrics__Container']", {
+            timeout: 30000
         });
 
-        // auto scroll biar full lirik kebuka
+        // scroll
         await page.evaluate(async () => {
             await new Promise(resolve => {
                 let total = 0;
@@ -182,27 +171,30 @@ async function scrapeMusixmatch(url) {
             });
         });
 
-        // ambil semua teks
-       const lyrics = await page.evaluate(() => {
+        const lyrics = await page.evaluate(() => {
             let text = "";
-        
-            // ✅ fokus ke container lirik asli musixmatch
-            const containers = document.querySelectorAll(
-                "div[class*='Lyrics__Container'] p, div[class*='Lyrics__Container'] span"
+
+            const blocks = document.querySelectorAll(
+                "div[class*='Lyrics__Container']"
             );
-        
-            containers.forEach(el => {
-                const t = el.innerText?.trim();
-        
-                if (
-                    t &&
-                    t.length > 2 &&
-                    !t.match(/cookie|consent|label|advert|privacy|terms/i)
-                ) {
-                    text += t + "\n";
-                }
+
+            blocks.forEach(block => {
+                const lines = block.innerText.split("\n");
+
+                lines.forEach(l => {
+                    const t = l.trim();
+
+                    if (
+                        t &&
+                        t.length > 2 &&
+                        !t.match(/(cookie|consent|label|advert|privacy|terms)/i) &&
+                        !t.match(/(unconditional|devotion|spiritual)/i)
+                    ) {
+                        text += t + "\n";
+                    }
+                });
             });
-        
+
             return text;
         });
 
@@ -217,7 +209,7 @@ async function scrapeMusixmatch(url) {
     }
 }
 
-// ================= FALLBACK SCRAPER =================
+// ================= FALLBACK =================
 async function scrapeFallback(url) {
     try {
         const { data } = await axios.get(url, {
@@ -236,19 +228,21 @@ async function scrapeFallback(url) {
             lyrics = $('[data-lyrics-container="true"]').text();
         }
 
-        if (!lyrics || lyrics.length < 50) {
-            $("p").each((i, el) => {
-                const t = $(el).text().trim();
-                if (t.length > 30) lyrics += t + "\n";
-            });
-        }
-
         return filterLines(cleanLyrics(lyrics));
 
     } catch (e) {
         console.log("[SCRAPE ERROR]", e.message);
         return null;
     }
+}
+
+// ================= SPLIT WA =================
+function splitMessage(text, limit = 3500) {
+    let parts = [];
+    for (let i = 0; i < text.length; i += limit) {
+        parts.push(text.substring(i, i + limit));
+    }
+    return parts;
 }
 
 // ================= MAIN =================
@@ -258,7 +252,7 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
 
     if (!query) {
         return sock.sendMessage(from, {
-            text: "Contoh: !lirik bahagia lagi"
+            text: "Contoh: .lirik bahagia lagi"
         }, { quoted: msg });
     }
 
@@ -271,7 +265,6 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
     const cache = loadCache();
     const key = normalize(query);
 
-    // ================= CACHE =================
     if (cache[key]) {
         console.log("[CACHE HIT]");
         return sock.sendMessage(from, {
@@ -279,24 +272,20 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
         }, { quoted: msg });
     }
 
-    // ================= SEARCH =================
     const { musix, fallback } = await searchGoogle(query);
 
     let lyrics = null;
 
-    // ================= PRIORITAS MUSIXMATCH =================
     if (musix) {
-        console.log("[TRY] MUSIXMATCH PLAYWRIGHT");
+        console.log("[TRY] MUSIXMATCH");
         lyrics = await scrapeMusixmatch(musix);
     }
 
-    // ================= FALLBACK =================
     if (!lyrics && fallback) {
-        console.log("[TRY] FALLBACK SCRAPER");
+        console.log("[TRY] FALLBACK");
         lyrics = await scrapeFallback(fallback);
     }
 
-    // ================= FAIL =================
     if (!lyrics || lyrics.length < 50) {
         return sock.sendMessage(from, {
             text:
@@ -304,25 +293,23 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
 
 🔎 Query: ${query}
 
-💡 Tips:
-- tambah artis
-- contoh: bahagia lagi piche kota`
+💡 Contoh:
+bahagia lagi piche kota`
         }, { quoted: msg });
     }
 
-    const result = formatLyricsWA(
-        lyrics,
-        query,
-        detected?.artist || ""
-    );
+    const artist = extractArtistFromQuery(query);
 
-    // ================= SAVE CACHE =================
+    const result = formatLyricsWA(lyrics, query, artist);
+
     cache[key] = result;
     saveCache(cache);
 
-    await sock.sendMessage(from, {
-        text: result
-    }, { quoted: msg });
+    const parts = splitMessage(result);
+
+    for (let p of parts) {
+        await sock.sendMessage(from, { text: p }, { quoted: msg });
+    }
 
     await sock.sendMessage(from, {
         react: { text: "🔥", key: msg.key }
