@@ -7,159 +7,146 @@ function normalize(text) {
     return text.toLowerCase().replace(/[^a-z0-9\s]/g, "").trim();
 }
 
-// ================= CLEAN =================
-function cleanLyrics(text) {
-    return text
-        .replace(/Advertisement/gi, "")
-        .replace(/Embed|Share|Copy/gi, "")
-        .replace(/\{.*?\}/g, "")
-        .replace(/@context|schema\.org/gi, "")
-        .replace(/\s{2,}/g, " ")
-        .replace(/\n{3,}/g, "\n\n")
+// ================= AI CLEANER =================
+function aiCleanLyrics(raw) {
+    return raw
+        .replace(/<script[\s\S]*?<\/script>/gi, "")
+        .replace(/<style[\s\S]*?<\/style>/gi, "")
+        .replace(/window\..*?\n/g, "")
+        .replace(/document\..*?\n/g, "")
+        .replace(/\{[\s\S]*?\}/g, "")
+        .replace(/Advertisement|Embed|Share|Copy|Lyrics|Cookie|Privacy/gi, "")
+        .replace(/©.*|All rights reserved.*/gi, "")
+        .replace(/\s{3,}/g, "\n")
         .trim();
 }
 
-// ================= PRESERVE SECTION =================
-function preserveSections(text) {
-    return text
-        .replace(/\[Verse\]/gi, "\nVERSE\n")
-        .replace(/\[Chorus\]/gi, "\nCHORUS\n")
-        .replace(/\[Bridge\]/gi, "\nBRIDGE\n");
+// ================= STRUCTURE DETECTOR =================
+function detectStructure(lines) {
+    const result = [];
+    let buffer = [];
+
+    const flush = () => {
+        if (buffer.length) {
+            result.push(buffer.join("\n"));
+            buffer = [];
+        }
+    };
+
+    for (const line of lines) {
+        const l = line.toLowerCase();
+
+        if (l.includes("verse")) {
+            flush();
+            result.push("🎤 VERSE");
+            continue;
+        }
+
+        if (l.includes("chorus") || l.includes("refrain")) {
+            flush();
+            result.push("🎶 CHORUS");
+            continue;
+        }
+
+        if (l.includes("bridge")) {
+            flush();
+            result.push("🎼 BRIDGE");
+            continue;
+        }
+
+        if (
+            l.includes("http") ||
+            l.includes("cookie") ||
+            l.includes("privacy") ||
+            l.length < 2
+        ) continue;
+
+        buffer.push(line);
+    }
+
+    flush();
+    return result;
 }
 
 // ================= FORMAT WA =================
-function formatLyricsForWhatsApp(text) {
-    const lines = text
+function formatWhatsAppAI(title, lyrics, url) {
+    const lines = lyrics
         .split("\n")
         .map(l => l.trim())
-        .filter(l => l.length > 0);
+        .filter(Boolean);
 
-    let result = "";
+    const structured = detectStructure(lines);
 
-    for (const line of lines) {
+    let output =
+`🎶 *LIRIK DITEMUKAN*
+━━━━━━━━━━━━━━
+🎵 ${title}
+\n`;
 
-        const lower = line.toLowerCase();
-
-        // section detection
-        if (lower.includes("verse")) {
-            result += `\n🎤 *VERSE*\n`;
-            continue;
+    for (const block of structured) {
+        if (
+            block.includes("VERSE") ||
+            block.includes("CHORUS") ||
+            block.includes("BRIDGE")
+        ) {
+            output += `\n${block}\n`;
+        } else {
+            output += `${block}\n\n`;
         }
-        if (lower.includes("chorus")) {
-            result += `\n🎶 *CHORUS*\n`;
-            continue;
-        }
-        if (lower.includes("bridge")) {
-            result += `\n🎼 *BRIDGE*\n`;
-            continue;
-        }
-
-        // normal lyric
-        result += `${line}\n`;
     }
 
-    return result.trim();
-}
-// ================= FILTER =================
-function filterLines(text) {
-    return text
-        .split("\n")
-        .map(l => l.trim())
-        .filter(l =>
-            l.length > 3 &&
-            !/(http|www|function|var |let |const |return)/i.test(l) &&
-            !/(HOME|BERITA|VIDEO|IKLAN|COOKIE|PRIVACY)/i.test(l)
-        )
-        .join("\n");
+    output +=
+`\n━━━━━━━━━━━━━━
+🔗 ${url}`;
+
+    return output;
 }
 
 // ================= SCRAPER =================
-async function scrapeLyrics(url) {
+async function scrapeLyricsAI(url) {
     try {
         const { data } = await axios.get(url, {
             headers: { "User-Agent": "Mozilla/5.0" }
         });
 
         const $ = cheerio.load(data);
-        let lyrics = "";
+        let text = "";
 
-        // ================= GENIUS (BEST) =================
+        // ================= GENIUS =================
         if (url.includes("genius.com")) {
             $('[data-lyrics-container="true"]').each((i, el) => {
-                lyrics += $(el).text() + "\n";
+                text += $(el).text() + "\n";
             });
         }
 
         // ================= KAPANLAGI =================
         else if (url.includes("kapanlagi")) {
-            lyrics = $("#lirik-main-content").text();
+            text = $("#lirik-main-content").text();
         }
 
-        // ================= AZLYRICS (FIX SUPER IMPORTANT) =================
+        // ================= AZLYRICS =================
         else if (url.includes("azlyrics")) {
-            // ambil hanya div tengah (AZLyrics structure fix)
             $("div").each((i, el) => {
                 const t = $(el).text();
 
-                // filter keras: hanya blok lirik asli
                 if (
                     t &&
                     t.length > 200 &&
                     t.length < 8000 &&
                     !t.includes("function") &&
                     !t.includes("var ") &&
-                    !t.includes("cookie") &&
-                    !t.includes("privacy")
+                    !t.includes("cookie")
                 ) {
-                    lyrics += t + "\n";
+                    text += t + "\n";
                 }
             });
         }
 
-        // ================= CLEAN FINAL =================
-        lyrics = lyrics
-            .replace(/<script[\s\S]*?<\/script>/gi, "")
-            .replace(/\{[\s\S]*?\}/g, "")
-            .replace(/window\..*?\n/g, "")
-            .replace(/document\..*?\n/g, "")
-            .replace(/Advertisement|Embed|Share/gi, "")
-            .replace(/\s{3,}/g, "\n")
-            .trim();
+        text = aiCleanLyrics(text);
 
-        if (lyrics.length < 80) return null;
+        if (text.length < 80) return null;
 
-        return lyrics;
-
-    } catch (e) {
-        console.log("[SCRAPE ERROR]", e.message);
-        return null;
-    }
-}
-        // ================= FALLBACK AMAN (TIDAK NGACO LAGI) =================
-        if (!lyrics || lyrics.length < 50) {
-            const possible = [];
-
-            $("div, p").each((i, el) => {
-                const t = $(el).text().trim();
-
-                if (
-                    t.length > 40 &&
-                    t.length < 2000 &&
-                    !/(cookie|privacy|login|subscribe|advertisement|menu|nav)/i.test(t)
-                ) {
-                    possible.push(t);
-                }
-            });
-
-            lyrics = possible.sort((a, b) => b.length - a.length)[0] || "";
-        }
-
-        lyrics = filterLines(lyrics);
-        lyrics = cleanLyrics(lyrics);
-
-        if (lyrics.length < 80) return null;
-
-        return lyrics;
+        return text;
 
     } catch (e) {
         console.log("[SCRAPE ERROR]", e.message);
@@ -229,7 +216,7 @@ function saveCache(cache) {
     fs.writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2));
 }
 
-// ================= MAIN =================
+// ================= MAIN BOT =================
 export async function lirik(sock, msg, from, sender, cmd, args) {
 
     const query = args.join(" ").trim();
@@ -264,35 +251,18 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
     }
 
     // ================= SCRAPE =================
-    let lyrics = await scrapeLyrics(url);
+    const rawLyrics = await scrapeLyricsAI(url);
 
-    if (!lyrics) {
+    if (!rawLyrics) {
         return sock.sendMessage(from, {
-            text:
-`❌ Lirik tidak ditemukan
-
-🔎 Query: ${query}
-
-💡 Coba:
-- tambah artis
-- contoh: bahagia lagi piche kota`
+            text: "❌ Lirik tidak ditemukan / tidak bisa diambil"
         }, { quoted: msg });
     }
 
-    // ================= FIX SECTION =================
-    lyrics = preserveSections(lyrics);
-    const formattedLyrics = formatLyricsForWhatsApp(lyrics);
+    // ================= FORMAT =================
+    const result = formatWhatsAppAI(query, rawLyrics, url);
 
-    const result =
-`🎶 *LIRIK DITEMUKAN*
-━━━━━━━━━━━━━━
-🎵 ${query}
-
-${formattedLyrics}
-
-━━━━━━━━━━━━━━
-
-    // ================= SAVE CACHE =================
+    // ================= CACHE SAVE =================
     cache[key] = result;
     saveCache(cache);
 
