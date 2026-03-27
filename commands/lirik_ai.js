@@ -39,7 +39,7 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
     const q = normalize(query);
 
     console.log("[TRY] lyrics-finder");
-    lyrics = await lyricsFinder(q);
+    lyrics = await lyricsFinder("", q);
 
     // fallback API
     if (!lyrics) {
