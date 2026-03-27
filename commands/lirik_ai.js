@@ -1,4 +1,3 @@
-import axios from "axios";
 import lyricsFinder from "lyrics-finder";
 
 // ================= NORMALIZE =================
@@ -9,78 +8,64 @@ function normalize(q) {
         .trim();
 }
 
-// ================= SMART SEARCH =================
-async function smartSearch(query) {
-    try {
-        const url = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&limit=5`;
-        const { data } = await axios.get(url);
+// ================= VALIDASI HASIL =================
+function isValidLyrics(lyrics, query) {
+    if (!lyrics) return false;
 
-        if (!data.results || data.results.length === 0) return null;
+    const qWords = query.toLowerCase().split(" ").filter(w => w.length > 3);
 
-        // ambil hasil paling atas
-        const best = data.results[0];
-
-        const title = best.trackName;
-        const artist = best.artistName;
-
-        console.log("[SMART RESULT]:", title, "-", artist);
-
-        return `${artist} ${title}`;
-    } catch (e) {
-        console.log("[SMART SEARCH ERROR]", e.message);
-        return null;
-    }
+    // minimal 1 kata dari query harus ada di lirik
+    return qWords.some(word => lyrics.toLowerCase().includes(word));
 }
 
-// ================= FALLBACK API =================
-async function apiLyrics(query) {
-    try {
-        const res = await axios.get(`https://api.popcat.xyz/lyrics?song=${encodeURIComponent(query)}`);
-        return res.data?.lyrics || null;
-    } catch {
-        return null;
-    }
-}
+// ================= SMART QUERY =================
+function generateQueries(query) {
+    const q = query.toLowerCase();
 
-// ================= FIND SMART =================
-async function findLyricsSmart(query) {
-    const tries = [];
+    const guesses = [
+        q,
+        q + " lyrics",
+        q + " lirik",
+    ];
 
-    // 1. original
-    tries.push(query);
-
-    // 2. smart suggestion
-    const smart = await smartSearch(query);
-    if (smart) tries.push(smart);
-
-    // 3. variasi tambahan
-    tries.push(query + " lyrics");
-    tries.push(query + " lirik");
-    tries.push(query.split(" ").reverse().join(" "));
-
-    for (let q of tries) {
-        console.log("[TRY QUERY]:", q);
-
-        let res = await lyricsFinder(q);
-        if (res) return { lyrics: res, used: q };
-
-        const api = await apiLyrics(q);
-        if (api) return { lyrics: api, used: q };
+    // 🔥 kalau cuma 2 kata → coba bolak balik
+    const parts = q.split(" ");
+    if (parts.length === 2) {
+        guesses.push(`${parts[1]} ${parts[0]}`);
     }
 
-    return null;
+    // 🔥 guess artist Indonesia populer
+    const artistHints = [
+        "piche kota",
+        "noah",
+        "hindia",
+        "juicy luicy",
+        "armada",
+        "mahalini",
+        "rizky febian",
+    ];
+
+    artistHints.forEach(artist => {
+        guesses.push(`${query} ${artist}`);
+    });
+
+    return [...new Set(guesses)];
 }
 
 // ================= MAIN =================
 export async function lirik(sock, msg, from, sender, cmd, args) {
 
-    const query = Array.isArray(args) ? args.join(" ").trim() : "";
+    const query = (() => {
+        if (Array.isArray(args)) return args.join(" ").trim();
+        if (typeof args === "string") return args.trim();
+        return "";
+    })();
 
     console.log("[LIRIK RAW]:", query);
 
-    if (!query) {
+    if (!query || query.length < 2) {
         return sock.sendMessage(from, {
-            text: "Ketik: !lirik noah separuh aku"
+            text: "Ketik: !lirik bahagia lagi"
         }, { quoted: msg });
     }
 
@@ -89,29 +74,63 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
     });
 
     const q = normalize(query);
+    const queries = generateQueries(q);
 
-    const result = await findLyricsSmart(q);
+    console.log("[SMART QUERIES]:", queries);
 
-    if (!result) {
+    let lyrics = null;
+    let usedQuery = "";
+
+    // ================= LOOP PENCARIAN =================
+    for (let qTry of queries) {
+        console.log("[TRY QUERY]:", qTry);
+
+        try {
+            const res = await lyricsFinder(qTry, "");
+
+            if (isValidLyrics(res, q)) {
+                lyrics = res;
+                usedQuery = qTry;
+                console.log("[VALID ✔]:", qTry);
+                break;
+            } else {
+                console.log("[INVALID ❌]:", qTry);
+            }
+
+        } catch (e) {
+            console.log("[ERROR]:", e.message);
+        }
+    }
+
+    // ================= FAIL =================
+    if (!lyrics) {
         return sock.sendMessage(from, {
-            text: `❌ Lirik tidak ditemukan\n\n🔎 ${query}`
+            text:
+`❌ Lirik tidak ditemukan (sudah dicoba pintar)
+
+🔎 Query: ${query}
+
+💡 Tips:
+- tambah nama penyanyi
+- contoh: !lirik bahagia lagi piche`
         }, { quoted: msg });
     }
 
-    const lyrics = result.lyrics
+    lyrics = lyrics
         .replace(/\r/g, "")
         .replace(/\n{3,}/g, "\n\n")
         .trim();
 
-    const text =
+    const header =
 `🎶 LIRIK DITEMUKAN
 ━━━━━━━━━━━━━━
-🔎 Query: ${query}
-🎯 Dipakai: ${result.used}
+🔎 Query Asli : ${query}
+✅ Dipakai    : ${usedQuery}
+`;
 
-${lyrics}`;
-
-    await sock.sendMessage(from, { text }, { quoted: msg });
+    await sock.sendMessage(from, {
+        text: header + "\n" + lyrics
+    }, { quoted: msg });
 
     await sock.sendMessage(from, {
         react: { text: "🔥", key: msg.key }
