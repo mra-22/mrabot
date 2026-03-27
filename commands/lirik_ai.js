@@ -29,21 +29,37 @@ function preserveSections(text) {
 
 // ================= FORMAT WA =================
 function formatLyricsForWhatsApp(text) {
-    return text
-        .replace(/\r/g, "")
+    const lines = text
         .split("\n")
         .map(l => l.trim())
-        .filter(l => l.length > 0)
-        .map(l => {
-            if (/^verse$/i.test(l)) return "\n🎤 VERSE\n";
-            if (/^chorus$/i.test(l)) return "\n🎶 CHORUS\n";
-            if (/^bridge$/i.test(l)) return "\n🎼 BRIDGE\n";
-            return l;
-        })
-        .join("\n")
-        .replace(/\n{3,}/g, "\n\n");
-}
+        .filter(l => l.length > 0);
 
+    let result = "";
+
+    for (const line of lines) {
+
+        const lower = line.toLowerCase();
+
+        // section detection
+        if (lower.includes("verse")) {
+            result += `\n🎤 *VERSE*\n`;
+            continue;
+        }
+        if (lower.includes("chorus")) {
+            result += `\n🎶 *CHORUS*\n`;
+            continue;
+        }
+        if (lower.includes("bridge")) {
+            result += `\n🎼 *BRIDGE*\n`;
+            continue;
+        }
+
+        // normal lyric
+        result += `${line}\n`;
+    }
+
+    return result.trim();
+}
 // ================= FILTER =================
 function filterLines(text) {
     return text
@@ -67,35 +83,58 @@ async function scrapeLyrics(url) {
         const $ = cheerio.load(data);
         let lyrics = "";
 
-        // ================= GENIUS (PALING AKURAT) =================
+        // ================= GENIUS (BEST) =================
         if (url.includes("genius.com")) {
             $('[data-lyrics-container="true"]').each((i, el) => {
                 lyrics += $(el).text() + "\n";
             });
-
-            if (lyrics.trim()) return cleanLyrics(lyrics);
         }
 
         // ================= KAPANLAGI =================
-        if (url.includes("kapanlagi")) {
+        else if (url.includes("kapanlagi")) {
             lyrics = $("#lirik-main-content").text();
-            if (lyrics.trim()) return cleanLyrics(lyrics);
         }
 
-        // ================= AZLYRICS (FIXED) =================
-        if (url.includes("azlyrics")) {
+        // ================= AZLYRICS (FIX SUPER IMPORTANT) =================
+        else if (url.includes("azlyrics")) {
+            // ambil hanya div tengah (AZLyrics structure fix)
             $("div").each((i, el) => {
-                const t = $(el).text().trim();
+                const t = $(el).text();
 
-                // ambil hanya blok panjang (lirik)
-                if (t && t.length > 100 && t.length < 10000) {
+                // filter keras: hanya blok lirik asli
+                if (
+                    t &&
+                    t.length > 200 &&
+                    t.length < 8000 &&
+                    !t.includes("function") &&
+                    !t.includes("var ") &&
+                    !t.includes("cookie") &&
+                    !t.includes("privacy")
+                ) {
                     lyrics += t + "\n";
                 }
             });
-
-            if (lyrics.trim()) return cleanLyrics(lyrics);
         }
 
+        // ================= CLEAN FINAL =================
+        lyrics = lyrics
+            .replace(/<script[\s\S]*?<\/script>/gi, "")
+            .replace(/\{[\s\S]*?\}/g, "")
+            .replace(/window\..*?\n/g, "")
+            .replace(/document\..*?\n/g, "")
+            .replace(/Advertisement|Embed|Share/gi, "")
+            .replace(/\s{3,}/g, "\n")
+            .trim();
+
+        if (lyrics.length < 80) return null;
+
+        return lyrics;
+
+    } catch (e) {
+        console.log("[SCRAPE ERROR]", e.message);
+        return null;
+    }
+}
         // ================= FALLBACK AMAN (TIDAK NGACO LAGI) =================
         if (!lyrics || lyrics.length < 50) {
             const possible = [];
@@ -245,13 +284,13 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
     const formattedLyrics = formatLyricsForWhatsApp(lyrics);
 
     const result =
-`🎶 LIRIK DITEMUKAN
+`🎶 *LIRIK DITEMUKAN*
 ━━━━━━━━━━━━━━
 🎵 ${query}
 
 ${formattedLyrics}
+
 ━━━━━━━━━━━━━━
-🔗 Sumber: ${url}`;
 
     // ================= SAVE CACHE =================
     cache[key] = result;
