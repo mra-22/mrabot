@@ -52,7 +52,7 @@ try:
 
     ydl_opts = {
         "quiet": True,
-        "format": "bestaudio/best",
+        "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best",
         "outtmpl": output_template,
         "noplaylist": True,
         "nocheckcertificate": True,
