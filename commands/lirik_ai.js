@@ -3,23 +3,49 @@ import * as cheerio from "cheerio";
 
 const GENIUS_TOKEN = process.env.GENIUS_TOKEN;
 
+// ================= NORMALIZE =================
+function normalize(text) {
+    return text
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, "")
+        .trim();
+}
+
 // ================= SIMILARITY =================
-function similarity(a, b) {
-    a = a.toLowerCase();
-    b = b.toLowerCase();
+function scoreMatch(query, title, artist) {
+    query = normalize(query);
+    title = normalize(title);
+    artist = normalize(artist);
 
     let score = 0;
-    const words = a.split(" ");
+
+    const words = query.split(" ");
 
     words.forEach(w => {
-        if (b.includes(w)) score++;
+        if (title.includes(w)) score += 3;
+        if (artist.includes(w)) score += 2;
+    });
+
+    // 🔥 bonus artis indo populer
+    const indoArtists = [
+        "piche kota",
+        "noah",
+        "hindia",
+        "juicy luicy",
+        "armada",
+        "mahalini",
+        "rizky febian"
+    ];
+
+    indoArtists.forEach(a => {
+        if (artist.includes(a)) score += 2;
     });
 
     return score;
 }
 
 // ================= SEARCH GENIUS =================
-async function searchGenius(query) {
+async function searchGeniusSmart(query) {
     try {
         const res = await axios.get("https://api.genius.com/search", {
             headers: {
@@ -32,30 +58,31 @@ async function searchGenius(query) {
 
         if (!hits.length) return null;
 
-        // 🔥 pilih yang paling mirip
         let best = null;
         let bestScore = 0;
 
-        for (let h of hits) {
-            const title = h.result.full_title;
-            const score = similarity(query, title);
+        for (let h of hits.slice(0, 10)) {
+            const title = h.result.title;
+            const artist = h.result.primary_artist.name;
+
+            const score = scoreMatch(query, title, artist);
+
+            console.log(`[CANDIDATE] ${artist} - ${title} | score=${score}`);
 
             if (score > bestScore) {
                 bestScore = score;
-                best = h.result;
+                best = {
+                    title: h.result.full_title,
+                    url: h.result.url,
+                    artist,
+                };
             }
         }
 
-        // minimal harus cocok
-        if (!best || bestScore === 0) return null;
-
-        return {
-            title: best.full_title,
-            url: best.url
-        };
+        return best;
 
     } catch (e) {
-        console.log("[GENIUS SEARCH ERROR]", e.message);
+        console.log("[GENIUS ERROR]", e.message);
         return null;
     }
 }
@@ -67,8 +94,7 @@ async function scrapeLyrics(url) {
             headers: {
                 "User-Agent":
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Referer": "https://genius.com/",
+                "Referer": "https://genius.com/"
             }
         });
 
@@ -93,7 +119,7 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
 
     const query = Array.isArray(args) ? args.join(" ") : args;
 
-    console.log("[GENIUS SEARCH]:", query);
+    console.log("[AUTO SEARCH]:", query);
 
     if (!query) {
         return sock.sendMessage(from, {
@@ -105,27 +131,29 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
         react: { text: "⏳", key: msg.key }
     });
 
-    const result = await searchGenius(query);
+    // 🔥 AUTO DETECT ARTIST
+    const result = await searchGeniusSmart(query);
 
     if (!result) {
         return sock.sendMessage(from, {
-            text: "❌ Lagu tidak ditemukan (filter aktif)"
+            text: "❌ Lagu tidak ditemukan"
         }, { quoted: msg });
     }
 
-    console.log("[FOUND]:", result.title);
+    console.log("[SELECTED]:", result.artist, "-", result.title);
 
     const lyrics = await scrapeLyrics(result.url);
 
     if (!lyrics) {
         return sock.sendMessage(from, {
-            text: "❌ Lirik gagal diambil (Genius block)"
+            text: "❌ Lirik gagal diambil"
         }, { quoted: msg });
     }
 
     await sock.sendMessage(from, {
         text:
 `🎶 ${result.title}
+👤 Artist: ${result.artist}
 ━━━━━━━━━━━━━━
 
 ${lyrics}`
