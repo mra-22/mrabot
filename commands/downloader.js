@@ -349,7 +349,7 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
 
     const rawQuery = args.join(" ").trim();
 
-    console.log("[LIRIK] RAW QUERY:", rawQuery);
+    console.log("[LIRIK] RAW:", rawQuery);
 
     if (!rawQuery) {
         return sock.sendMessage(from, {
@@ -368,14 +368,14 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
         function normalize(q) {
             return q
                 .toLowerCase()
-                .replace(/noah|official|lyrics|lirik|video|audio/g, "")
+                .replace(/official|lyrics|lirik|video|audio|noah/g, "")
                 .replace(/\s+/g, " ")
                 .trim();
         }
 
         let query = normalize(rawQuery);
 
-        console.log("[LIRIK] NORMALIZED QUERY:", query);
+        console.log("[LIRIK] NORMALIZED:", query);
 
         let artist = "";
         let title = "";
@@ -389,110 +389,94 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
         console.log("[LIRIK] ARTIST:", artist);
         console.log("[LIRIK] TITLE:", title);
 
-        // ================= GENIUS SEARCH =================
-        async function searchGenius(q) {
+        // ================= SCRAPER ENGINE =================
+        async function searchLyrics(q) {
             try {
-                console.log("[GENIUS] SEARCH:", q);
+                console.log("[SEARCH] DuckDuckGo:", q);
 
                 const { data } = await axios.get(
-                    `https://genius.com/api/search/multi?q=${encodeURIComponent(q)}`
-                );
-
-                const sections = data?.response?.sections || [];
-
-                const songSection = sections.find(s => s.type === "song");
-                const hits = songSection?.hits || [];
-
-                for (const hit of hits) {
-                    const r = hit?.result;
-                    if (r?.url) {
-                        console.log("[GENIUS] FOUND:", r.title);
-
-                        return {
-                            url: r.url,
-                            title: r.title,
-                            artist: r.primary_artist?.name || ""
-                        };
-                    }
-                }
-
-                // fallback all sections
-                for (const sec of sections) {
-                    for (const hit of sec?.hits || []) {
-                        const r = hit?.result;
-                        if (r?.url) {
-                            console.log("[GENIUS] FALLBACK FOUND:", r.title);
-
-                            return {
-                                url: r.url,
-                                title: r.title,
-                                artist: r.primary_artist?.name || ""
-                            };
+                    `https://duckduckgo.com/html/?q=${encodeURIComponent(q + " lyrics")}`,
+                    {
+                        headers: {
+                            "User-Agent":
+                                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
                         }
                     }
-                }
-
-                return null;
-
-            } catch (err) {
-                console.log("[GENIUS ERROR]:", err.message);
-                return null;
-            }
-        }
-
-        // ================= SCRAPE LYRICS =================
-        async function getLyrics(url) {
-            try {
-                console.log("[SCRAPE] URL:", url);
-
-                const { data } = await axios.get(url);
+                );
 
                 const $ = cheerio.load(data);
 
+                let link = null;
+
+                $("a.result__a").each((i, el) => {
+                    const href = $(el).attr("href");
+                    if (!link && href && href.startsWith("http")) {
+                        link = href;
+                    }
+                });
+
+                if (!link) {
+                    console.log("[SEARCH] No link found");
+                    return null;
+                }
+
+                console.log("[FOUND LINK]:", link);
+
+                const page = await axios.get(link, {
+                    headers: {
+                        "User-Agent":
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
+                    }
+                });
+
+                const $$ = cheerio.load(page.data);
+
                 let lyrics = "";
 
-                $("div[data-lyrics-container='true']").each((i, el) => {
-                    lyrics += $(el).text() + "\n";
+                $$("p, div").each((i, el) => {
+                    const text = $$(el).text();
+
+                    if (text && text.length > 40) {
+                        lyrics += text + "\n";
+                    }
                 });
 
                 return lyrics.trim() || null;
 
             } catch (err) {
-                console.log("[SCRAPE ERROR]:", err.message);
+                console.log("[SEARCH ERROR]:", err.message);
+                return null;
+            }
+        }
+
+        // ================= LYRICS OVH FALLBACK =================
+        async function lyricsOVH(a, t) {
+            try {
+                console.log("[FALLBACK] lyrics.ovh");
+
+                const res = await axios.get(
+                    `https://api.lyrics.ovh/v1/${encodeURIComponent(a || "")}/${encodeURIComponent(t)}`
+                );
+
+                return res.data?.lyrics || null;
+
+            } catch (err) {
+                console.log("[LYRICS.OVH ERROR]:", err.message);
                 return null;
             }
         }
 
         // ================= MAIN FLOW =================
-        let song =
-            await searchGenius(`${artist} ${title}`) ||
-            await searchGenius(title) ||
-            await searchGenius(rawQuery);
+        let lyrics =
+            await searchLyrics(`${artist} ${title}`) ||
+            await searchLyrics(title) ||
+            await searchLyrics(rawQuery);
 
-        console.log("[SONG RESULT]:", song);
+        console.log("[RESULT LYRICS]:", lyrics ? "FOUND" : "NULL");
 
-        let lyrics = null;
-
-        if (song?.url) {
-            lyrics = await getLyrics(song.url);
-            artist = song.artist || artist;
-            title = song.title || title;
-        }
-
-        // ================= FALLBACK LYRICS.OVH =================
+        // fallback
         if (!lyrics) {
-            try {
-                console.log("[FALLBACK] lyrics.ovh");
-
-                const res = await axios.get(
-                    `https://api.lyrics.ovh/v1/${encodeURIComponent(artist || "")}/${encodeURIComponent(title)}`
-                );
-
-                lyrics = res.data?.lyrics || null;
-
-            } catch (err) {
-                console.log("[LYRICS.OVH ERROR]:", err.message);
-            }
+            lyrics = await lyricsOVH(artist, title);
         }
 
         // ================= FAIL =================
@@ -503,9 +487,9 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
                 text:
 `❌ Lirik tidak ditemukan
 
-🔎 Debug Info:
-- Query: ${rawQuery}
-- Normalized: ${query}
+🔎 Debug:
+- Raw: ${rawQuery}
+- Query: ${query}
 - Artist: ${artist}
 - Title: ${title}
 
@@ -547,13 +531,13 @@ export async function lirik(sock, msg, from, sender, cmd, args) {
 
         success = true;
 
-        console.log("[SUCCESS] LYRICS SENT");
+        console.log("[SUCCESS] SENT");
 
     } catch (err) {
         console.log("[GLOBAL ERROR]:", err);
 
         await sock.sendMessage(from, {
-            text: "❌ Error saat mengambil lirik (cek logs Railway)"
+            text: "❌ Error saat mengambil lirik (cek Railway logs)"
         }, { quoted: msg });
     }
 
