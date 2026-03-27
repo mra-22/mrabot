@@ -5,6 +5,7 @@ import subprocess
 import json
 from yt_dlp import YoutubeDL
 
+# ===================== VALIDASI INPUT =====================
 if len(sys.argv) < 2:
     print("[DOWNLOAD ERROR] Judul lagu tidak diberikan", file=sys.stderr)
     sys.exit(1)
@@ -16,6 +17,7 @@ output_dir = "audios"
 os.makedirs(output_dir, exist_ok=True)
 
 
+# ===================== HELPER =====================
 def sanitize_filename(name):
     return re.sub(r"[^a-zA-Z0-9]", "_", name).strip("_").lower()
 
@@ -52,20 +54,24 @@ def convert_to_mp3(input_path):
     return None
 
 
+# ===================== MAIN =====================
 try:
     cookies_file = "cookiesyt.txt"
 
+    # 🔍 SEARCH VIDEO
     ydl_opts_info = {
         "quiet": True,
         "skip_download": True,
         "noplaylist": True,
         "default_search": "ytsearch",
+        "nocheckcertificate": True,
+        "geo_bypass": True,
+        "extractor_args": {"youtube": {"player_client": ["android"]}},
     }
 
     if os.path.exists(cookies_file):
         ydl_opts_info["cookiefile"] = cookies_file
 
-    # ================= SEARCH VIDEO =================
     with YoutubeDL(ydl_opts_info) as ydl:
         search_result = ydl.extract_info(search_keyword, download=False)
 
@@ -79,12 +85,15 @@ try:
         title = sanitize_filename(video_info.get("title", "audio"))
         output_path = os.path.join(output_dir, f"{title}.mp4")
 
-    # ================= DOWNLOAD VIDEO =================
+    # ⬇️ DOWNLOAD AUDIO (BEST)
     ydl_opts_download = {
         "format": "bestaudio/best",
         "quiet": True,
         "outtmpl": output_path,
         "noplaylist": True,
+        "nocheckcertificate": True,
+        "geo_bypass": True,
+        "extractor_args": {"youtube": {"player_client": ["android"]}},
     }
 
     if os.path.exists(cookies_file):
@@ -96,23 +105,21 @@ try:
     if not os.path.exists(output_path):
         raise Exception("File video tidak ditemukan setelah download")
 
-    # ================= CONVERT =================
+    # 🔄 CONVERT KE MP3
     mp3_path = convert_to_mp3(output_path)
 
     if not mp3_path or not os.path.exists(mp3_path):
         raise Exception("Gagal konversi ke MP3")
 
-    # ================= OUTPUT UNTUK NODE =================
-    info = {
-        "title": video_info.get("title", "-"),
-        "uploader": video_info.get("uploader", "-"),
-        "duration": video_info.get("duration", 0),
-        "thumbnail": video_info.get("thumbnail", "")
-    }
+    # ===================== OUTPUT KE NODE =====================
+    print(f"::SUCCESS::{mp3_path}")
+    print(f"::TITLE::{video_info.get('title','-')}")
+    print(f"::URL::{video_url}")
+    print(f"::THUMB::{video_info.get('thumbnail','')}")
+    print(f"::UPLOADER::{video_info.get('uploader','-')}")
+    print(f"::DURATION::{video_info.get('duration',0)}")
 
-    print(f"::MP3::{mp3_path}")
-    print(f"::INFO::{json.dumps(info)}")
-
+# ===================== ERROR =====================
 except Exception as e:
     print(f"[DOWNLOAD ERROR] {e}", file=sys.stderr)
     sys.exit(1)
