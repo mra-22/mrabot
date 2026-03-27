@@ -3,7 +3,6 @@ import path from "path";
 import fs from "fs";
 import util from "util";
 import { getSenderRawId, resolveToMainId } from "../moduls/user.js";
-import axios from "axios";
 
 const execPromise = util.promisify(exec);
 const pythonCmd = process.platform === "win32" ? "py" : "python3";
@@ -232,11 +231,12 @@ export async function downloaderCommand({ sock, msg, from, text }) {
    ===============         PLAY MUSIC        ==================
    ============================================================*/
 export async function play(sock, msg, from, sender, cmd, args) {
+    if (!Array.isArray(args)) args = [];
     const query = args.join(" ");
 
     if (!query) {
         return sock.sendMessage(from, {
-            text: "❗ Masukkan judul lagu\nContoh: !play dj jedag jedug --320"
+            text: "❗ Masukkan judul lagu"
         }, { quoted: msg });
     }
 
@@ -246,14 +246,11 @@ export async function play(sock, msg, from, sender, cmd, args) {
     let videoUrl = null;
 
     try {
-        // 🔥 LOADING MESSAGE
-        const loadingMsg = await sock.sendMessage(from, {
-            text: "🎧 Sedang mencari lagu..."
-        }, { quoted: msg });
-
         const { stdout } = await execPromise(
             `python3 ./moduls/downloader_lagu.py "${query}"`
         );
+
+        console.log(stdout);
 
         const mp3Match = stdout.match(/::SUCCESS::(.+)/);
         const titleMatch = stdout.match(/::TITLE::(.+)/);
@@ -268,27 +265,32 @@ export async function play(sock, msg, from, sender, cmd, args) {
         const uploader = uploaderMatch ? uploaderMatch[1].trim() : "-";
         const duration = durationMatch ? parseInt(durationMatch[1]) : 0;
 
-        const caption = `╭━━━〔 🎵 PLAY MUSIC PREMIUM 〕━━━⬣
+        // 🎨 CAPTION
+        const caption = `╭━━━〔 🎵 PLAY MUSIC 〕━━━⬣
 ┃ 🎧 Judul   : ${title}
 ┃ 📺 Channel : ${uploader}
 ┃ ⏱️ Durasi  : ${formatDuration(duration)}
 ╰━━━━━━━━━━━━━━━━⬣`;
 
-        // 📸 Thumbnail
+        // 📸 KIRIM THUMBNAIL
         if (thumbnail) {
             await sock.sendMessage(from, {
                 image: { url: thumbnail },
                 caption
             }, { quoted: msg });
+        } else {
+            await sock.sendMessage(from, { text: caption }, { quoted: msg });
         }
 
-        // 🎧 Audio
+        // 🎧 KIRIM AUDIO JIKA ADA
         if (mp3Match) {
             const path = mp3Match[1].trim();
 
             if (fs.existsSync(path)) {
+                const buffer = fs.readFileSync(path);
+
                 await sock.sendMessage(from, {
-                    audio: fs.readFileSync(path),
+                    audio: buffer,
                     mimetype: "audio/mpeg",
                     fileName: `${title}.mp3`
                 }, { quoted: msg });
@@ -302,7 +304,7 @@ export async function play(sock, msg, from, sender, cmd, args) {
         console.log("❌ yt-dlp gagal");
     }
 
-    // 🔥 FALLBACK API (ANTI GAGAL TOTAL)
+    // 🔥 FALLBACK AUDIO
     if (!success && videoUrl) {
         try {
             const res = await fetch(
@@ -324,10 +326,9 @@ export async function play(sock, msg, from, sender, cmd, args) {
         }
     }
 
-    // 🔥 LAST FAIL
     if (!success && videoUrl) {
         await sock.sendMessage(from, {
-            text: `🎧 Gagal download.\nLink:\n${videoUrl}`
+            text: `🎧 Tidak bisa kirim audio.\n${videoUrl}`
         }, { quoted: msg });
     }
 
@@ -335,7 +336,6 @@ export async function play(sock, msg, from, sender, cmd, args) {
         react: { text: success ? "✅" : "❌", key: msg.key }
     });
 }
-
 /* ============================================================
    ==================  DOWNLOAD APK  ==========================
    ============================================================*/
