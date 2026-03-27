@@ -68,12 +68,26 @@ def get_qr():
 def set_qr():
     global qr_data_global
 
-    data = request.json
-    qr_data_global = data.get("qr")
+    try:
+        if not request.is_json:
+            return jsonify({"error": "Request harus JSON"}), 400
 
-    logging.info("QR updated from Node")
-    return jsonify({"status": "QR updated"})
+        data = request.get_json()
+        qr = data.get("qr")
 
+        if not qr:
+            return jsonify({"error": "QR kosong"}), 400
+
+        qr_data_global = qr
+
+        print("✅ QR diterima dari Node")
+        logging.info("QR updated from Node")
+
+        return jsonify({"status": "QR updated"})
+
+    except Exception as e:
+        print("❌ ERROR /set-qr:", str(e))
+        return jsonify({"error": str(e)}), 500
 # ---------------- SEND COMMAND ----------------
 @app.route("/send-command", methods=["POST"])
 def send_command():
