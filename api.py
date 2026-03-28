@@ -37,9 +37,6 @@ PROGRESS_FILE = "broadcast_progress.json"
 STATUS_FILE = "bot_status.txt"
 
 # ---------------- ROOT ----------------
-@app.route("/")
-def home():
-    return jsonify({"message": "MR.A BOT API RUNNING 🚀"})
 
 # ---------------- QR VIEW ----------------
 @app.route("/qr")
