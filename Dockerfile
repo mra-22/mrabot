@@ -1,6 +1,8 @@
 FROM python:3.12-slim
 
-# Install system deps + chromium deps (WAJIB untuk Playwright)
+# =============================
+# SYSTEM DEPENDENCIES
+# =============================
 RUN apt-get update && apt-get install -y \
     curl \
     git \
@@ -29,17 +31,22 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Node deps
+# =============================
+# NODE DEPENDENCIES
+# =============================
 COPY package*.json ./
-
-# install dependencies termasuk cheerio
 RUN npm cache clean --force && npm install --omit=dev --legacy-peer-deps
 
-# Copy project
+# =============================
+# COPY PROJECT
+# =============================
 COPY . .
 
-# Python deps
-RUN pip install --no-cache-dir \
+# =============================
+# PYTHON DEPENDENCIES
+# =============================
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir \
     yt-dlp \
     requests \
     beautifulsoup4 \
@@ -47,12 +54,24 @@ RUN pip install --no-cache-dir \
     flask \
     flask-cors
 
-# Install browser (ringan: chromium saja)
-RUN playwright install chromium
+# 🔥 WAJIB: install browser + deps lengkap
+RUN playwright install --with-deps chromium
 
+# =============================
+# FOLDER OUTPUT (PENTING)
+# =============================
+RUN mkdir -p /app/videos && chmod -R 777 /app/videos
+
+# =============================
+# ENV
+# =============================
 ENV PYTHONUNBUFFERED=1
 ENV NODE_ENV=production
 
+# =============================
+# START SCRIPT
+# =============================
 COPY start.sh .
 RUN chmod +x start.sh
+
 CMD ["./start.sh"]
