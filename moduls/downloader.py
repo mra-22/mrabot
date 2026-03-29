@@ -200,7 +200,30 @@ def download_video(url):
         sys.stderr.write(f"[YTDLP ERROR] {e}\n")
         sys.stderr.flush()
         return False
+        
+def tiktok_api_fallback(url):
+    try:
+        api = f"https://api.tiklydown.eu.org/api/download?url={url}"
+        res = requests.get(api, timeout=15).json()
 
+        if res.get("video"):
+            fn = os.path.join(OUTPUT_DIR, "tiktok_api.mp4")
+            vid = requests.get(res["video"]).content
+
+            with open(fn, "wb") as f:
+                f.write(vid)
+
+            sys.stderr.write("::FILE::" + os.path.abspath(fn) + "\n")
+            sys.stderr.write("::INFO::" + json.dumps({
+                "title": "TikTok Video",
+                "uploader": "API"
+            }) + "\n")
+            sys.stderr.flush()
+            return True
+    except:
+        pass
+
+    return False
 # =============================
 # MAIN
 # =============================
@@ -218,9 +241,15 @@ if __name__ == "__main__":
         except:
             pass
 
+    
     # utama
     if download_video(url):
         sys.exit(0)
+    
+    # 🔥 fallback tiktok
+    if "tiktok.com" in url:
+        if tiktok_api_fallback(url):
+            sys.exit(0)
 
     # fallback IG
     if "instagram.com" in url:
