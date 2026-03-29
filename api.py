@@ -1,23 +1,45 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import json, os
+import json, os, threading, time
 
 app = Flask(__name__)
 CORS(app)  # ⚡ CORS aman
 
-# Path file dari bot Node.js
+# ---------------- FILE PATH ----------------
 STATUS_FILE = "./bot_status.txt"
 GROUP_FILE = "./group_list.json"
 STATS_FILE = "./bot_stats.json"
 LOG_FILE = "./bot.log"
+CMD_FILE = "./command_queue.json"
+
+# ---------------- UTILS ----------------
+def safe_read_json(path, default):
+    if os.path.exists(path):
+        try:
+            with open(path, "r") as f:
+                return json.load(f)
+        except:
+            return default
+    return default
+
+def safe_write_json(path, data):
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
+
+def append_log(msg):
+    with open(LOG_FILE, "a") as f:
+        f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - {msg}\n")
 
 # ------------------- STATUS BOT -------------------
 @app.route("/status", methods=["GET"])
 def get_status():
     try:
-        with open(STATUS_FILE, "r") as f:
-            status = f.read().strip()
-        return jsonify({"status": status})
+        if os.path.exists(STATUS_FILE):
+            with open(STATUS_FILE, "r") as f:
+                status = f.read().strip()
+            return jsonify({"status": status})
+        else:
+            return jsonify({"status": "STOPPED"})
     except Exception as e:
         return jsonify({"status": "UNKNOWN", "error": str(e)})
 
@@ -25,12 +47,8 @@ def get_status():
 @app.route("/groups", methods=["GET"])
 def get_groups():
     try:
-        if os.path.exists(GROUP_FILE):
-            with open(GROUP_FILE, "r") as f:
-                groups = json.load(f)
-            return jsonify(groups)
-        else:
-            return jsonify([])
+        groups = safe_read_json(GROUP_FILE, [])
+        return jsonify(groups)
     except Exception as e:
         return jsonify({"groups": [], "error": str(e)})
 
@@ -38,31 +56,34 @@ def get_groups():
 @app.route("/stats", methods=["GET"])
 def get_stats():
     try:
-        if os.path.exists(STATS_FILE):
-            with open(STATS_FILE, "r") as f:
-                stats = json.load(f)
-            return jsonify(stats)
-        else:
-            return jsonify({"groups": 0, "users": 0})
+        stats = safe_read_json(STATS_FILE, {"groups": 0, "users": 0})
+        return jsonify(stats)
     except Exception as e:
         return jsonify({"groups": 0, "users": 0, "error": str(e)})
+
+# ------------------- PROGRESS -------------------
+@app.route("/progress", methods=["GET"])
+def get_progress():
+    # Bisa kamu ubah sesuai data nyata dari Node.js
+    return jsonify({
+        "total": 100,
+        "sent": 25,
+        "failed": 5
+    })
 
 # ------------------- SEND COMMAND -------------------
 @app.route("/send-command", methods=["POST"])
 def send_command():
     data = request.json
     cmd = data.get("command")
-    
-    # Simpan command ke file sementara agar Node.js bisa ambil
-    CMD_FILE = "./command_queue.json"
+    if not cmd:
+        return jsonify({"status": "error", "error": "Command kosong"})
+
     try:
-        queue = []
-        if os.path.exists(CMD_FILE):
-            with open(CMD_FILE, "r") as f:
-                queue = json.load(f)
-        queue.append(cmd)
-        with open(CMD_FILE, "w") as f:
-            json.dump(queue, f, indent=2)
+        queue = safe_read_json(CMD_FILE, [])
+        queue.append({"command": cmd, "timestamp": time.time()})
+        safe_write_json(CMD_FILE, queue)
+        append_log(f"Command queued: {cmd}")
         return jsonify({"status": "ok", "command": cmd})
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)})
@@ -74,7 +95,7 @@ def get_logs():
         if os.path.exists(LOG_FILE):
             with open(LOG_FILE, "r") as f:
                 lines = f.readlines()[-100:]  # ambil 100 baris terakhir
-            return "<br>".join([line.replace('\n', '') for line in lines])
+            return "<br>".join([line.strip() for line in lines])
         else:
             return "Log file belum ada"
     except Exception as e:
@@ -85,14 +106,17 @@ def get_logs():
 def root():
     return "✅ MR.A BOT API RUNNING 🚀"
 
-@app.route("/progress", methods=["GET"])
-def get_progress():
-    return jsonify({
-        "total": 100,
-        "sent": 25,
-        "failed": 5
-    })
+# ------------------- AUTO CREATE FILE -------------------
+for fpath, default in [(STATUS_FILE, "STOPPED"), (CMD_FILE, []), (GROUP_FILE, []), (STATS_FILE, {"groups":0,"users":0})]:
+    if not os.path.exists(fpath):
+        if isinstance(default, str):
+            with open(fpath, "w") as f:
+                f.write(default)
+        else:
+            safe_write_json(fpath, default)
+
 # ------------------- RUN SERVER -------------------
 if __name__ == "__main__":
     PORT = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=PORT)
+    print(f"🟢 API running on port {PORT}")
+    app.run(host="0.0.0.0", port=PORT, debug=True)
