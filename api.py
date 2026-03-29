@@ -10,7 +10,7 @@ STATUS_FILE = "./bot_status.txt"
 GROUP_FILE = "./group_list.json"
 STATS_FILE = "./bot_stats.json"
 LOG_FILE = "./bot.log"
-CMD_FILE = "./command_queue.json"
+CMD_FILE = "./command_queue.txt"
 
 # ---------------- UTILS ----------------
 def safe_read_json(path, default):
