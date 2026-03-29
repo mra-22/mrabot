@@ -109,10 +109,12 @@ def send_command():
 # ---------------- STATUS ----------------
 @app.route("/status")
 def status():
+    print("Hit /status")  # <-- ini untuk cek apakah request sampai
     try:
         with open(STATUS_FILE) as f:
             return jsonify({"status": f.read().strip()})
-    except:
+    except Exception as e:
+        print("Error membaca status file:", e)
         return jsonify({"status": "STOPPED"})
 
 # ---------------- GROUPS ----------------
