@@ -1,165 +1,91 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import logging
-from datetime import datetime
-import qrcode
-import base64
-from io import BytesIO
-import json
-import os
-
-# ---------------- LOGGING ----------------
-logging.basicConfig(
-    level=logging.INFO,
-    format='[%(asctime)s] %(levelname)s: %(message)s'
-)
+import json, os
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
+CORS(app)  # ⚡ CORS aman
 
-# ---------------- GLOBAL ----------------
-qr_data_global = None
-LOGS = []
+# Path file dari bot Node.js
+STATUS_FILE = "./bot_status.txt"
+GROUP_FILE = "./group_list.json"
+STATS_FILE = "./bot_stats.json"
+LOG_FILE = "./bot.log"
 
-# ---------------- FILES ----------------
-COMMAND_QUEUE = "command_queue.txt"
-GROUP_FILE = "group_list.json"
-PROGRESS_FILE = "broadcast_progress.json"
-STATUS_FILE = "bot_status.txt"
-
-# ---------------- ENSURE FILES EXIST ----------------
-for file_path, default_content in [
-    (COMMAND_QUEUE, ""),
-    (GROUP_FILE, []),
-    (PROGRESS_FILE, {"total":0,"sent":0,"failed":0}),
-    (STATUS_FILE, "STOPPED")
-]:
-    if not os.path.exists(file_path):
-        with open(file_path, "w") as f:
-            if isinstance(default_content, (list, dict)):
-                json.dump(default_content, f, indent=2)
-            else:
-                f.write(default_content)
-
-# ---------------- HELPERS ----------------
-def add_log(msg):
-    timestamp = datetime.now().strftime("%H:%M:%S")
-    LOGS.insert(0, f"[{timestamp}] {msg}")
-    if len(LOGS) > 50:
-        LOGS.pop()
-
-def read_json_file(file_path, default):
-    if os.path.exists(file_path):
-        try:
-            with open(file_path) as f:
-                return json.load(f)
-        except:
-            return default
-    return default
-
-def write_json_file(file_path, data):
-    with open(file_path, "w") as f:
-        json.dump(data, f, indent=2)
-
-# ---------------- AFTER REQUEST ----------------
-@app.after_request
-def after_request(response):
-    response.headers.add("Access-Control-Allow-Origin", "*")
-    response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
-    response.headers.add("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
-    return response
-@app.route("/test")
-def test():
-    return "OK"
-# ---------------- QR ----------------
-@app.route("/qr")
-def get_qr():
-    global qr_data_global
-    if not qr_data_global:
-        return "❌ QR belum tersedia, bot belum kirim QR"
-    try:
-        img = qrcode.make(qr_data_global)
-        buffer = BytesIO()
-        img.save(buffer, format="PNG")
-        img_base64 = base64.b64encode(buffer.getvalue()).decode()
-        return f"""
-        <h1>Scan QR WhatsApp</h1>
-        <img src="data:image/png;base64,{img_base64}" />
-        """
-    except Exception as e:
-        return str(e)
-
-@app.route("/set-qr", methods=["POST"])
-def set_qr():
-    global qr_data_global
-    try:
-        if not request.is_json:
-            return jsonify({"error": "Request harus JSON"}), 400
-        data = request.get_json()
-        qr = data.get("qr")
-        if not qr:
-            return jsonify({"error": "QR kosong"}), 400
-        qr_data_global = qr
-        add_log("QR updated from Node")
-        logging.info("QR updated from Node")
-        return jsonify({"status": "QR updated"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-# ---------------- COMMAND ----------------
-@app.route("/send-command", methods=["POST"])
-def send_command():
-    try:
-        data = request.json
-        cmd = data.get("command")
-        if not cmd:
-            return jsonify({"error": "No command"}), 400
-        with open(COMMAND_QUEUE, "a") as f:
-            f.write(cmd + "\n")
-        add_log(f"Command queued: {cmd}")
-        return jsonify({"status": "ok", "command": cmd})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-# ---------------- STATUS ----------------
+# ------------------- STATUS BOT -------------------
 @app.route("/status", methods=["GET"])
 def get_status():
     try:
-        with open(STATUS_FILE) as f:
-            return jsonify({"status": f.read().strip()})
+        with open(STATUS_FILE, "r") as f:
+            status = f.read().strip()
+        return jsonify({"status": status})
     except Exception as e:
-        add_log(f"Error membaca status: {e}")
-        return jsonify({"status": "STOPPED"})
+        return jsonify({"status": "UNKNOWN", "error": str(e)})
 
-# ---------------- GROUPS ----------------
+# ------------------- LIST GROUP -------------------
 @app.route("/groups", methods=["GET"])
-def groups():
-    groups_data = read_json_file(GROUP_FILE, [])
-    return jsonify(groups_data)
+def get_groups():
+    try:
+        if os.path.exists(GROUP_FILE):
+            with open(GROUP_FILE, "r") as f:
+                groups = json.load(f)
+            return jsonify(groups)
+        else:
+            return jsonify([])
+    except Exception as e:
+        return jsonify({"groups": [], "error": str(e)})
 
-# ---------------- STATS ----------------
+# ------------------- STATS BOT -------------------
 @app.route("/stats", methods=["GET"])
-def stats():
-    groups_data = read_json_file(GROUP_FILE, [])
-    stats_data = {
-        "groups": len(groups_data),
-        "users": sum(g.get("size", 0) for g in groups_data)
-    }
-    return jsonify(stats_data)
+def get_stats():
+    try:
+        if os.path.exists(STATS_FILE):
+            with open(STATS_FILE, "r") as f:
+                stats = json.load(f)
+            return jsonify(stats)
+        else:
+            return jsonify({"groups": 0, "users": 0})
+    except Exception as e:
+        return jsonify({"groups": 0, "users": 0, "error": str(e)})
 
-# ---------------- PROGRESS ----------------
-@app.route("/progress", methods=["GET"])
-def progress():
-    progress_data = read_json_file(PROGRESS_FILE, {"total":0,"sent":0,"failed":0})
-    return jsonify(progress_data)
+# ------------------- SEND COMMAND -------------------
+@app.route("/send-command", methods=["POST"])
+def send_command():
+    data = request.json
+    cmd = data.get("command")
+    
+    # Simpan command ke file sementara agar Node.js bisa ambil
+    CMD_FILE = "./command_queue.json"
+    try:
+        queue = []
+        if os.path.exists(CMD_FILE):
+            with open(CMD_FILE, "r") as f:
+                queue = json.load(f)
+        queue.append(cmd)
+        with open(CMD_FILE, "w") as f:
+            json.dump(queue, f, indent=2)
+        return jsonify({"status": "ok", "command": cmd})
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)})
 
-# ---------------- LOGS ----------------
+# ------------------- GET LOG -------------------
 @app.route("/logs", methods=["GET"])
 def get_logs():
-    return jsonify(LOGS)
+    try:
+        if os.path.exists(LOG_FILE):
+            with open(LOG_FILE, "r") as f:
+                lines = f.readlines()[-100:]  # ambil 100 baris terakhir
+            return "<br>".join([line.replace('\n', '') for line in lines])
+        else:
+            return "Log file belum ada"
+    except Exception as e:
+        return f"Error: {str(e)}"
 
-# ---------------- RUN ----------------
+# ------------------- ROOT -------------------
+@app.route("/", methods=["GET"])
+def root():
+    return "✅ MR.A BOT API RUNNING 🚀"
+
+# ------------------- RUN SERVER -------------------
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    logging.info(f"Starting server on port {port}")
-    app.run(host="0.0.0.0", port=port)
+    PORT = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=PORT)
