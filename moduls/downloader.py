@@ -140,15 +140,28 @@ def instagram_fallback(url):
 # =============================
 def download_video(url):
     try:
-        opts = {
+       opts = {
             "format": "mp4/bestvideo+bestaudio",
             "merge_output_format": "mp4",
             "outtmpl": OUTPUT_DIR + "/%(id)s.%(ext)s",
             "quiet": True,
             "noplaylist": True,
             "logger": QuietLogger(),
+        
+            # 🔥 WAJIB
+            "cookiefile": "/app/tiktok_cookies.txt",
+        
+            # 🔥 penting banget
             "http_headers": {
-                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X)"
+                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X)",
+                "Referer": "https://www.tiktok.com/",
+            },
+        
+            # 🔥 bypass tambahan
+            "extractor_args": {
+                "tiktok": {
+                    "api_hostname": "api16-normal-c-useast1a.tiktokv.com"
+                }
             }
         }
 
