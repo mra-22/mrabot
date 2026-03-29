@@ -68,7 +68,9 @@ def after_request(response):
     response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
     response.headers.add("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
     return response
-
+@app.route("/test")
+def test():
+    return "OK"
 # ---------------- QR ----------------
 @app.route("/qr")
 def get_qr():
