@@ -10,7 +10,6 @@ import os
 
 # ---------------- LOGGING ----------------
 logging.basicConfig(
-    filename='api.log',
     level=logging.INFO,
     format='[%(asctime)s] %(levelname)s: %(message)s'
 )
@@ -27,6 +26,20 @@ COMMAND_QUEUE = "command_queue.txt"
 GROUP_FILE = "group_list.json"
 PROGRESS_FILE = "broadcast_progress.json"
 STATUS_FILE = "bot_status.txt"
+
+# ---------------- ENSURE FILES EXIST ----------------
+for file_path, default_content in [
+    (COMMAND_QUEUE, ""),
+    (GROUP_FILE, []),
+    (PROGRESS_FILE, {"total":0,"sent":0,"failed":0}),
+    (STATUS_FILE, "STOPPED")
+]:
+    if not os.path.exists(file_path):
+        with open(file_path, "w") as f:
+            if isinstance(default_content, (list, dict)):
+                json.dump(default_content, f, indent=2)
+            else:
+                f.write(default_content)
 
 # ---------------- HELPERS ----------------
 def add_log(msg):
@@ -107,24 +120,23 @@ def send_command():
         return jsonify({"error": str(e)}), 500
 
 # ---------------- STATUS ----------------
-@app.route("/status")
-def status():
-    print("Hit /status")  # <-- ini untuk cek apakah request sampai
+@app.route("/status", methods=["GET"])
+def get_status():
     try:
         with open(STATUS_FILE) as f:
             return jsonify({"status": f.read().strip()})
     except Exception as e:
-        print("Error membaca status file:", e)
+        add_log(f"Error membaca status: {e}")
         return jsonify({"status": "STOPPED"})
 
 # ---------------- GROUPS ----------------
-@app.route("/groups")
+@app.route("/groups", methods=["GET"])
 def groups():
     groups_data = read_json_file(GROUP_FILE, [])
     return jsonify(groups_data)
 
 # ---------------- STATS ----------------
-@app.route("/stats")
+@app.route("/stats", methods=["GET"])
 def stats():
     groups_data = read_json_file(GROUP_FILE, [])
     stats_data = {
@@ -134,17 +146,18 @@ def stats():
     return jsonify(stats_data)
 
 # ---------------- PROGRESS ----------------
-@app.route("/progress")
+@app.route("/progress", methods=["GET"])
 def progress():
     progress_data = read_json_file(PROGRESS_FILE, {"total":0,"sent":0,"failed":0})
     return jsonify(progress_data)
 
 # ---------------- LOGS ----------------
-@app.route("/logs")
+@app.route("/logs", methods=["GET"])
 def get_logs():
     return jsonify(LOGS)
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    logging.info(f"Starting server on port {port}")
+    app.run(host="0.0.0.0", port=port)
