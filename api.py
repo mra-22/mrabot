@@ -80,11 +80,13 @@ def send_command():
         return jsonify({"status": "error", "error": "Command kosong"})
 
     try:
-        queue = safe_read_json(CMD_FILE, [])
-        queue.append({"command": cmd, "timestamp": time.time()})
-        safe_write_json(CMD_FILE, queue)
+        # append command ke file .txt
+        with open(CMD_FILE, "a") as f:
+            f.write(cmd + "\n")  # setiap command baru di baris baru
+        
         append_log(f"Command queued: {cmd}")
         return jsonify({"status": "ok", "command": cmd})
+    
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)})
 
