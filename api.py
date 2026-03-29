@@ -85,6 +85,13 @@ def get_logs():
 def root():
     return "✅ MR.A BOT API RUNNING 🚀"
 
+@app.route("/progress", methods=["GET"])
+def get_progress():
+    return jsonify({
+        "total": 100,
+        "sent": 25,
+        "failed": 5
+    })
 # ------------------- RUN SERVER -------------------
 if __name__ == "__main__":
     PORT = int(os.environ.get("PORT", 5000))
