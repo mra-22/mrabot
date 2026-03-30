@@ -14,9 +14,14 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # LOGGER
 # =============================
 class QuietLogger:
-    def debug(self, msg): pass
-    def warning(self, msg): pass
-    def error(self, msg): sys.stderr.write(f"[YTDLP ERROR] {msg}\n")
+    def debug(self, msg): 
+        pass
+
+    def warning(self, msg): 
+        pass
+
+    def error(self, msg): 
+        sys.stderr.write(f"[YTDLP ERROR] {msg}\n")
 
 # =============================
 # DEBUG
@@ -36,7 +41,7 @@ def expand_url(url):
         return url
 
 # =============================
-# CONVERT WA MP4 (AMAN)
+# CONVERT WA MP4
 # =============================
 def convert_to_whatsapp_mp4(path):
     output = os.path.splitext(path)[0] + "_wa.mp4"
@@ -75,9 +80,10 @@ def tiktok_slideshow(url):
         browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
         context = browser.new_context(
             user_agent="Mozilla/5.0 (iPhone)",
-            viewport={"width":390,"height":844},
+            viewport={"width": 390, "height": 844},
             is_mobile=True
         )
+
         page = context.new_page()
         page.goto(url, timeout=30000)
         time.sleep(3)
@@ -96,16 +102,22 @@ def tiktok_slideshow(url):
     for i, img in enumerate(images):
         fn = f"{OUTPUT_DIR}/tiktok_{i}.jpg"
         r = requests.get(img).content
+
         with open(fn, "wb") as f:
             f.write(r)
+
         files.append(os.path.abspath(fn))
 
     if not files:
         raise Exception("Slideshow gagal")
 
     sys.stderr.write("::FILES::" + json.dumps(files) + "\n")
-    sys.stderr.write("::INFO::" + json.dumps({"title":"TikTok Slideshow","uploader":"TikTok"}) + "\n")
+    sys.stderr.write("::INFO::" + json.dumps({
+        "title": "TikTok Slideshow",
+        "uploader": "TikTok"
+    }) + "\n")
     sys.stderr.flush()
+
     return True
 
 # =============================
@@ -115,9 +127,10 @@ def instagram_fallback(url):
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
         api = url.split("?")[0] + "?__a=1&__d=dis"
-        r = requests.get(api, headers=headers, timeout=15)
 
+        r = requests.get(api, headers=headers, timeout=15)
         data = r.json()
+
         video_url = data["items"][0]["video_versions"][0]["url"]
 
         fn = os.path.join(OUTPUT_DIR, "instagram.mp4")
@@ -127,8 +140,12 @@ def instagram_fallback(url):
             f.write(vid)
 
         sys.stderr.write("::FILE::" + os.path.abspath(fn) + "\n")
-        sys.stderr.write("::INFO::" + json.dumps({"title":"Instagram Video","uploader":"Instagram"}) + "\n")
+        sys.stderr.write("::INFO::" + json.dumps({
+            "title": "Instagram Video",
+            "uploader": "Instagram"
+        }) + "\n")
         sys.stderr.flush()
+
         return True
 
     except Exception as e:
@@ -136,28 +153,22 @@ def instagram_fallback(url):
         return False
 
 # =============================
-# YTDLP DOWNLOAD (FIX UTAMA)
+# YTDLP DOWNLOAD (FIX)
 # =============================
 def download_video(url):
     try:
-       opts = {
+        opts = {
             "format": "mp4/bestvideo+bestaudio",
             "merge_output_format": "mp4",
             "outtmpl": OUTPUT_DIR + "/%(id)s.%(ext)s",
             "quiet": True,
             "noplaylist": True,
             "logger": QuietLogger(),
-        
-            # 🔥 WAJIB
             "cookiefile": "/app/tiktok_cookies.txt",
-        
-            # 🔥 penting banget
             "http_headers": {
                 "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X)",
-                "Referer": "https://www.tiktok.com/",
+                "Referer": "https://www.tiktok.com/"
             },
-        
-            # 🔥 bypass tambahan
             "extractor_args": {
                 "tiktok": {
                     "api_hostname": "api16-normal-c-useast1a.tiktokv.com"
@@ -168,7 +179,6 @@ def download_video(url):
         with YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
 
-            # 🔥 ambil file REAL (FIX BUG UTAMA)
             if "requested_downloads" in info:
                 file = info["requested_downloads"][0]["filepath"]
             elif "_filename" in info:
@@ -176,7 +186,6 @@ def download_video(url):
             else:
                 raise Exception("File tidak ditemukan dari yt-dlp")
 
-        # 🔥 validasi file
         if not os.path.exists(file):
             raise Exception(f"File tidak ada: {file}")
 
@@ -200,7 +209,10 @@ def download_video(url):
         sys.stderr.write(f"[YTDLP ERROR] {e}\n")
         sys.stderr.flush()
         return False
-        
+
+# =============================
+# TIKTOK API FALLBACK
+# =============================
 def tiktok_api_fallback(url):
     try:
         api = f"https://api.tiklydown.eu.org/api/download?url={url}"
@@ -219,11 +231,14 @@ def tiktok_api_fallback(url):
                 "uploader": "API"
             }) + "\n")
             sys.stderr.flush()
+
             return True
+
     except:
         pass
 
     return False
+
 # =============================
 # MAIN
 # =============================
@@ -241,12 +256,11 @@ if __name__ == "__main__":
         except:
             pass
 
-    
     # utama
     if download_video(url):
         sys.exit(0)
-    
-    # 🔥 fallback tiktok
+
+    # fallback TikTok
     if "tiktok.com" in url:
         if tiktok_api_fallback(url):
             sys.exit(0)
