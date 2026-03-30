@@ -14,14 +14,9 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # LOGGER
 # =============================
 class QuietLogger:
-    def debug(self, msg): 
-        pass
-
-    def warning(self, msg): 
-        pass
-
-    def error(self, msg): 
-        sys.stderr.write(f"[YTDLP ERROR] {msg}\n")
+    def debug(self, msg): pass
+    def warning(self, msg): pass
+    def error(self, msg): sys.stderr.write(f"[YTDLP ERROR] {msg}\n")
 
 # =============================
 # DEBUG
@@ -153,62 +148,64 @@ def instagram_fallback(url):
         return False
 
 # =============================
-# YTDLP DOWNLOAD (FIX)
+# YTDLP DOWNLOAD (RETRY + COOKIE)
 # =============================
 def download_video(url):
-    try:
-        opts = {
-            "format": "mp4/bestvideo+bestaudio",
-            "merge_output_format": "mp4",
-            "outtmpl": OUTPUT_DIR + "/%(id)s.%(ext)s",
-            "quiet": True,
-            "noplaylist": True,
-            "logger": QuietLogger(),
-            "cookiefile": "/app/tiktok_cookies.txt",
-            "http_headers": {
-                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X)",
-                "Referer": "https://www.tiktok.com/"
-            },
-            "extractor_args": {
-                "tiktok": {
-                    "api_hostname": "api16-normal-c-useast1a.tiktokv.com"
-                }
+    opts = {
+        "format": "mp4",
+        "merge_output_format": "mp4",
+        "outtmpl": OUTPUT_DIR + "/%(id)s.%(ext)s",
+        "quiet": True,
+        "noplaylist": True,
+        "logger": QuietLogger(),
+
+        "cookiefile": "/app/tiktok_cookies.txt",
+
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X)",
+            "Referer": "https://www.tiktok.com/"
+        },
+
+        "extractor_args": {
+            "tiktok": {
+                "api_hostname": "api16-normal-c-useast1a.tiktokv.com"
             }
         }
+    }
 
-        with YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=True)
+    for i in range(2):  # 🔥 retry 2x
+        try:
+            with YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=True)
 
-            if "requested_downloads" in info:
-                file = info["requested_downloads"][0]["filepath"]
-            elif "_filename" in info:
-                file = info["_filename"]
-            else:
-                raise Exception("File tidak ditemukan dari yt-dlp")
+                if "requested_downloads" in info:
+                    file = info["requested_downloads"][0]["filepath"]
+                elif "_filename" in info:
+                    file = info["_filename"]
+                else:
+                    raise Exception("File tidak ditemukan")
 
-        if not os.path.exists(file):
-            raise Exception(f"File tidak ada: {file}")
+            if not os.path.exists(file):
+                raise Exception("File tidak ada")
 
-        final = convert_to_whatsapp_mp4(file)
+            final = convert_to_whatsapp_mp4(file)
 
-        if not os.path.exists(final):
-            raise Exception("Convert gagal")
+            sys.stderr.write("::FILE::" + os.path.abspath(final) + "\n")
+            sys.stderr.write("::INFO::" + json.dumps({
+                "title": info.get("title"),
+                "uploader": info.get("uploader"),
+                "duration": info.get("duration"),
+                "thumbnail": info.get("thumbnail")
+            }) + "\n")
+            sys.stderr.flush()
 
-        sys.stderr.write("::FILE::" + os.path.abspath(final) + "\n")
-        sys.stderr.write("::INFO::" + json.dumps({
-            "title": info.get("title"),
-            "uploader": info.get("uploader"),
-            "duration": info.get("duration"),
-            "thumbnail": info.get("thumbnail")
-        }) + "\n")
-        sys.stderr.flush()
+            return True
 
-        return True
+        except Exception as e:
+            sys.stderr.write(f"[YTDLP RETRY {i}] {e}\n")
+            time.sleep(2)
 
-    except Exception as e:
-        sys.stderr.write(f"[YTDLP ERROR] {e}\n")
-        sys.stderr.flush()
-        return False
+    return False
 
 # =============================
 # TIKTOK API FALLBACK
@@ -248,7 +245,7 @@ if __name__ == "__main__":
 
     url = expand_url(sys.argv[1])
 
-    # TikTok slideshow
+    # slideshow
     if "tiktok.com" in url and "/photo/" in url:
         try:
             tiktok_slideshow(url)
