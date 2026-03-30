@@ -134,7 +134,7 @@ export default async function messageHandler(m, sock,) {
         // BALASAN SAPAAN LAIN
         // ======================
         if (/^p+$/.test(sapaan)) {
-            balasan = 'Jangan mi p p, Langsung chat saja sayang';
+            balasan = 'apa lu p p p  si paing p dah';
             reaction = '🥰';
         } else if (/^oi+$/.test(sapaan)) {
             balasan = 'oi kenapa ko kah';
