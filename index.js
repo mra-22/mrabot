@@ -1,5 +1,5 @@
 
-import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from "baileys";
+import { makeWASocket, DisconnectReason, fetchLatestBaileysVersion } from "baileys";
 import pino from "pino";
 import chalk from "chalk";
 import figlet from "figlet";
@@ -14,6 +14,9 @@ const origLog = console.log
 import express from "express";
 import qrcode from "qrcode"; 
 import axios from "axios"; 
+import { connectMongo } from "./mongo.js"
+import { useMongoAuthState } from "./auth.js"
+
 console.log = function (...args) {
 
     const text = args.join(" ")
@@ -813,7 +816,9 @@ app.listen(PORT, "0.0.0.0", () => {
 
 async function startBot() {
     await new Promise(r => setTimeout(r, 3000))
-    const { state, saveCreds } = await useMultiFileAuthState("./baileys_auth");
+    await connectMongo()
+
+    const { state, saveCreds } = await useMongoAuthState()
     const { version } = await fetchLatestBaileysVersion();
     if (BOT_ACTIVE) {
         console.log("⚠️ Bot sudah aktif")
